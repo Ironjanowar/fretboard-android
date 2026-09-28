@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The platform's Material theme, so the first APK needs no extra UI
+      dependency: Compose draws the content, the theme only styles the window.
+    -->
+    <style name="Theme.Fretboard" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

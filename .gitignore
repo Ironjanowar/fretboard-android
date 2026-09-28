@@ -1,0 +1,24 @@
+# Build outputs
+build/
+.gradle/
+local.properties
+
+# The verified engine artifact is a vendor payload: it is copied in by
+# scripts/prepare_core.py after its SHA-256 is checked, and never committed.
+engine/maven/
+engine/libs/
+
+# Secrets and local SDK paths
+*.jks
+*.keystore
+keystore.properties
+
+# Evidence and IDE files
+artifacts/
+.idea/
+*.iml
+.DS_Store
+
+# Python bytecode
+__pycache__/
+*.pyc
