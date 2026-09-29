@@ -38,16 +38,27 @@ import dev.ironjanowar.fretboard.core.ChordDto
 import dev.ironjanowar.fretboard.core.InstrumentDto
 import dev.ironjanowar.fretboard.core.InstrumentStateDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.core.PositionDto
+import dev.ironjanowar.fretboard.core.TabDto
 import dev.ironjanowar.fretboard.session.SessionLoad
 import dev.ironjanowar.fretboard.session.SessionView
+import dev.ironjanowar.fretboard.session.TuningDraft
 import dev.ironjanowar.fretboard.session.applyEvent
+import dev.ironjanowar.fretboard.session.applyTuningDraft
+import dev.ironjanowar.fretboard.session.changeTuningString
+import dev.ironjanowar.fretboard.session.engineFailure
 import dev.ironjanowar.fretboard.session.lastFret
+import dev.ironjanowar.fretboard.session.openTuningDraft
 import dev.ironjanowar.fretboard.session.selectInstrument
 import dev.ironjanowar.fretboard.session.startSession
+import dev.ironjanowar.fretboard.ui.analyzer.AnalyzerScreen
 import dev.ironjanowar.fretboard.ui.common.PillChip
 import dev.ironjanowar.fretboard.ui.controls.InstrumentPicker
+import dev.ironjanowar.fretboard.ui.tuning.TuningSheet
 import dev.ironjanowar.fretboard.ui.visualizer.VisualizerScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The application's dark theme: the frozen chord palette over a near-black UI. */
 private val FretboardTheme = darkColorScheme(
@@ -77,13 +88,13 @@ private val FretboardTheme = darkColorScheme(
 fun describeTuning(reference: String, pitches: ByteArray): String =
     "$reference ${pitches.map { byte -> byte.toInt() and 0xFF }.joinToString("-")}"
 
-/** The two views of the same session. */
-private enum class FretboardTab(val title: String) {
-    Visualizer("Visualizer"),
-    Analyzer("Analyzer"),
-}
+/** The two views of the same session, with the engine's own tab values. */
+private val TAB_TITLES: List<Pair<TabDto, String>> = listOf(
+    TabDto.VISUALIZER to "Visualizer",
+    TabDto.ANALYZER to "Analyzer",
+)
 
-/** The whole screen: the engine's catalogs, the controls and the visualizer. */
+/** The whole screen: the engine's catalogs, the controls and the two tabs. */
 @Composable
 fun FretboardApp() {
     MaterialTheme(colorScheme = FretboardTheme) {
@@ -104,7 +115,9 @@ private fun FretboardScreen() {
     var view by remember { mutableStateOf<SessionView?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(true) }
-    var tab by remember { mutableStateOf(FretboardTab.Visualizer) }
+    // The tuning sheet is open exactly while a draft exists; the draft itself is
+    // the engine's value plus the engine's own reading of it.
+    var draft by remember { mutableStateOf<TuningDraft?>(null) }
     var root by remember { mutableStateOf("C") }
     var quality by remember { mutableStateOf("major") }
     val scope = rememberCoroutineScope()
@@ -118,6 +131,21 @@ private fun FretboardScreen() {
                     error = null
                 }
                 is SessionLoad.Failed -> error = result.reason
+            }
+            busy = false
+        }
+    }
+
+    /** One engine call whose answer is not a whole session, on the worker thread. */
+    fun <T> withEngine(block: suspend () -> T, onReady: (T) -> Unit) {
+        busy = true
+        scope.launch {
+            try {
+                val answer = withContext(Dispatchers.Default) { block() }
+                error = null
+                onReady(answer)
+            } catch (failure: Throwable) {
+                error = engineFailure(failure)
             }
             busy = false
         }
@@ -160,26 +188,47 @@ private fun FretboardScreen() {
             selected = current.instrumentId(),
             enabled = !busy,
             onSelect = { definition ->
+                // A change of instrument invalidates an open draft: it was opened
+                // for the instrument that was current then.
+                draft = null
                 run { selectInstrument(current, definition) }
             },
         )
 
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FretboardTab.entries.forEach { candidate ->
+            TAB_TITLES.forEach { (candidate, title) ->
                 PillChip(
-                    text = candidate.title,
-                    selected = candidate == tab,
-                    onClick = { tab = candidate },
-                    modifier = Modifier.testTag("tab-${candidate.name}"),
+                    text = title,
+                    selected = candidate == current.state.tab,
+                    enabled = !busy,
+                    onClick = { run { applyEvent(current, PageEventDto.SetTab(candidate)) } },
+                    modifier = Modifier.testTag("tab-${candidate.name.lowercase()}"),
                 )
+            }
+            Spacer(Modifier.weight(1f))
+            // No ghost tuning control on the keyboard: the engine has no tuning
+            // for it and its modal does not exist.
+            if (current.instrumentId() != InstrumentDto.PIANO) {
+                TextButton(
+                    onClick = {
+                        withEngine({ openTuningDraft(current) }) { opened -> draft = opened }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.testTag("open-tuning"),
+                ) {
+                    Text("Tuning")
+                }
             }
         }
 
-        when (tab) {
-            FretboardTab.Visualizer -> VisualizerScreen(
+        when (current.state.tab) {
+            TabDto.VISUALIZER -> VisualizerScreen(
                 view = current,
                 root = root,
                 quality = quality,
@@ -198,16 +247,59 @@ private fun FretboardScreen() {
                 enabled = !busy,
             )
 
-            FretboardTab.Analyzer -> FeatureAvailability(
-                title = "Analyzer is not built yet",
-                detail =
-                    "This build shows the visualizer. The fretted analyzer — tapping a " +
-                        "position and reading the engine's interval answer — arrives in the " +
-                        "next phase, and this tab will hold it.",
-                modifier = Modifier.padding(horizontal = 16.dp),
+            TabDto.ANALYZER -> AnalyzerScreen(
+                view = current,
+                onTapPosition = { position: PositionDto ->
+                    run { applyEvent(current, PageEventDto.ToggleNote(position)) }
+                },
+                onClearSelection = { run { applyEvent(current, PageEventDto.ClearSelection) } },
+                enabled = !busy,
             )
         }
     }
+
+    val open = draft
+    if (open != null) {
+        TuningSheet(
+            draft = open,
+            stringCount = currentStringCount(view, open.instrument),
+            onChangeString = { stringIndex, note ->
+                withEngine({ changeTuningString(open, stringIndex, note) }) { edited ->
+                    draft = edited
+                }
+            },
+            onApply = {
+                val page = view
+                if (page != null) {
+                    busy = true
+                    scope.launch {
+                        when (val result = applyTuningDraft(page, open)) {
+                            is SessionLoad.Ready -> {
+                                view = result.view
+                                error = null
+                                draft = null
+                            }
+                            is SessionLoad.Failed -> {
+                                error = result.reason
+                                // A stale draft cannot be committed: it is dropped
+                                // so the sheet cannot be applied twice.
+                                draft = null
+                            }
+                        }
+                        busy = false
+                    }
+                }
+            },
+            onCancel = { draft = null },
+            enabled = !busy,
+        )
+    }
+}
+
+/** The string count of the instrument a draft belongs to, from the engine's catalog. */
+private fun currentStringCount(view: SessionView?, instrument: InstrumentDto): Int {
+    val definition = view?.instruments?.firstOrNull { it.instrument == instrument }
+    return definition?.strings?.toInt() ?: 0
 }
 
 /** The compact title bar: the app name, the instrument and its tuning. */
