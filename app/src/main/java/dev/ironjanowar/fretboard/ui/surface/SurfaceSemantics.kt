@@ -23,3 +23,18 @@ fun positionLabel(stringIndex: Int, stringCount: Int, fret: Int, note: String): 
     val sounding = note.ifEmpty { "an unnamed note" }
     return "String $stringNumber, $position, $sounding"
 }
+
+/**
+ * The spoken label of one keyboard key.
+ *
+ * The design asks the piano's labels to be unique and to carry the engine's own
+ * note; the engine's keyboard key names the note but not its octave (the
+ * artifact's `KeyboardKeyDto` carries no octave-qualified or key-kind metadata),
+ * so the label names the engine's note together with the engine's own pitch
+ * number, which is what makes two same-named keys in different octaves
+ * distinguishable without the client computing a register of its own.
+ */
+fun pianoKeyLabel(note: String, pitch: Int): String {
+    val sounding = note.ifEmpty { "an unnamed note" }
+    return "Key $sounding, pitch $pitch"
+}

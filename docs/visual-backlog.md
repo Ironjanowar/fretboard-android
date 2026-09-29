@@ -17,7 +17,8 @@ where, and what they would prefer — rather than a vague summary.
 Deliberately not on this list, because they are functional and belong to their own
 tasks:
 
-* the preset **picker** in the tuning draft is deferred until the engine
-  enumerates preset names (`docs/build-contract.md` records the reason);
-* the piano keyboard, the key/progression pickers and the session/URL work belong
-  to the phases that own them.
+* the preset **picker** in the tuning draft read the engine's enumerated preset
+  names once the 0.4.0 artifact exported them (`presets(instrument)`); it is
+  wired and unit-tested in P4 (`docs/build-contract.md`);
+* the key/progression pickers and the session/URL work belong to the phases that
+  own them. The piano keyboard landed in P4.

@@ -147,6 +147,7 @@ class FrettedAnalyzerTest {
             details = emptyList(),
             slots = emptyList(),
             surface = null,
+            keyboard = null,
             analysis = SessionAnalysis.Absent,
         )
 
@@ -165,6 +166,7 @@ class FrettedAnalyzerTest {
             details = emptyList(),
             slots = emptyList(),
             surface = null,
+            keyboard = null,
             analysis = SessionAnalysis.Absent,
         )
 
