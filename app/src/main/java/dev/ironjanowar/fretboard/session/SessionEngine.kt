@@ -3,6 +3,7 @@ package dev.ironjanowar.fretboard.session
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
 import dev.ironjanowar.fretboard.core.InstrumentDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.core.PageStateDto
 
 /**
  * Every engine round trip the session screen makes, as one port.
@@ -22,6 +23,17 @@ interface SessionEngine {
 
     /** The fresh session: the engine's default state plus its two catalogs. */
     suspend fun start(): SessionLoad
+
+    /**
+     * The engine's own view of one page state the client already holds.
+     *
+     * A stored session comes back as the page it was written as, and a page on its
+     * own is not a screen: the surfaces, the chord details, the colour slots and
+     * the analysis are the engine's answers and are asked for again here, exactly
+     * as they are for a fresh session. Nothing about a restored page is assembled
+     * by the client.
+     */
+    suspend fun restore(page: PageStateDto): SessionLoad
 
     /** One page event, answered by the engine's own reducer. */
     suspend fun apply(view: SessionView, event: PageEventDto): SessionLoad
@@ -54,6 +66,8 @@ interface SessionEngine {
 object BindingSessionEngine : SessionEngine {
 
     override suspend fun start(): SessionLoad = startSession()
+
+    override suspend fun restore(page: PageStateDto): SessionLoad = restoreSession(page)
 
     override suspend fun apply(view: SessionView, event: PageEventDto): SessionLoad =
         applyEvent(view, event)

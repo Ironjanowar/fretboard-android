@@ -17,9 +17,9 @@ import dev.ironjanowar.fretboard.core.QualityGroupDto
 import dev.ironjanowar.fretboard.core.TabDto
 import dev.ironjanowar.fretboard.core.TuningDto
 import dev.ironjanowar.fretboard.ui.SessionStateHolder
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import dev.ironjanowar.fretboard.storage.support.FakeSessionStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -135,6 +135,12 @@ class KeyProgressionDraftTest {
         val applied = mutableListOf<PageEventDto>()
 
         override suspend fun start(): SessionLoad = startAnswer
+
+        /**
+         * The engine's own view of a page the client already holds (A17). Nothing in
+         * this suite stores a session, so the holder never routes through it.
+         */
+        override suspend fun restore(page: PageStateDto): SessionLoad = startAnswer
 
         override suspend fun apply(view: SessionView, event: PageEventDto): SessionLoad {
             applied += event
@@ -336,7 +342,7 @@ class KeyProgressionDraftTest {
         engine: SessionEngine,
         keyEngine: KeyProgressionEngine,
         scope: CoroutineScope,
-    ) = SessionStateHolder(scope, engine, keyEngine)
+    ) = SessionStateHolder(scope, engine, keyEngine, store = FakeSessionStore())
 
     @Test
     fun `opening the key sheet shows the fresh draft at once and fills the preview`() = runTest {

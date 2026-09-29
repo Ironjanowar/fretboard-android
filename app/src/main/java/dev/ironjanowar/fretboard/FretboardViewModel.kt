@@ -1,9 +1,10 @@
 package dev.ironjanowar.fretboard
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
@@ -12,6 +13,7 @@ import dev.ironjanowar.fretboard.core.PageEventDto
 import dev.ironjanowar.fretboard.session.BindingKeySuggestionEngine
 import dev.ironjanowar.fretboard.session.EvaluationCoordinator
 import dev.ironjanowar.fretboard.session.EvaluationUiState
+import dev.ironjanowar.fretboard.storage.lastSessionStore
 import dev.ironjanowar.fretboard.ui.SessionState
 import dev.ironjanowar.fretboard.ui.SessionStateHolder
 
@@ -29,16 +31,30 @@ import dev.ironjanowar.fretboard.ui.SessionStateHolder
  * positions and keys, the stored chords, the highlight, the root and quality
  * pickers, an open tuning draft with its edits, the key and progression drafts
  * with the engine's previews, and the suggestion rows with their expansion —
- * survives rotation and rotating back, without a byte of it being written to
- * disk. Disk and URL persistence are a separate, later task by decision.
+ * survives rotation and rotating back — and, since A17, survives the process as
+ * well: every accepted transition is written to the application's own file through
+ * the holder's store, and the next launch reopens the page it holds. URL import and
+ * sharing remain a separate, later task by decision.
  *
  * No musical value is computed here or anywhere below it: `SessionStateHolder`
  * asks the engine through its port and keeps the answer, and the
  * [EvaluationCoordinator] only decides *when* to ask — never what a key is.
  */
-class FretboardViewModel : ViewModel() {
+class FretboardViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val holder = SessionStateHolder(viewModelScope)
+    /**
+     * The session, with the last one written down beside it (A17).
+     *
+     * The store is the application's own private file, and the holder is what it
+     * is handed: every accepted transition is persisted through it, and the next
+     * launch reopens the page it holds. Nothing about the session's own values
+     * changes — the store carries the engine's opaque snapshot, never a second
+     * copy of the music.
+     */
+    private val holder = SessionStateHolder(
+        viewModelScope,
+        store = lastSessionStore(getApplication<Application>().filesDir),
+    )
 
     /**
      * The keys panel's asynchronous lifecycle.

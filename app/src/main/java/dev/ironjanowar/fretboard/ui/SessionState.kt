@@ -4,6 +4,10 @@ import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
 import dev.ironjanowar.fretboard.core.KeySuggestionDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.storage.SessionStore
+import dev.ironjanowar.fretboard.storage.NO_STORED_REVISION
+import dev.ironjanowar.fretboard.storage.StoreOutcome
+import dev.ironjanowar.fretboard.storage.StoredSession
 import dev.ironjanowar.fretboard.session.BindingKeyProgressionEngine
 import dev.ironjanowar.fretboard.session.BindingSessionEngine
 import dev.ironjanowar.fretboard.session.KeyDraft
@@ -98,6 +102,7 @@ class SessionStateHolder(
     private val scope: CoroutineScope,
     private val engine: SessionEngine = BindingSessionEngine,
     private val keyEngine: KeyProgressionEngine = BindingKeyProgressionEngine,
+    private val store: SessionStore,
 ) {
 
     /** The current session. Read-only outside: every write is a transition. */
@@ -126,6 +131,15 @@ class SessionStateHolder(
     private var draftGeneration: Long = 0
 
     /**
+     * The revision the newest accepted page was stored as (A17).
+     *
+     * It starts at [NO_STORED_REVISION] and follows the revision a restored session
+     * was written with, so a write after a restart cannot be mistaken for an older
+     * one by the store that has to order them.
+     */
+    private var storedRevision: Long = NO_STORED_REVISION
+
+    /**
      * Ask the engine for the session, unless one is already held.
      *
      * This runs after every composition (and therefore after every rotation), so
@@ -134,13 +148,38 @@ class SessionStateHolder(
      */
     fun start() {
         if (state.view != null) return
-        reload()
+        reopen()
     }
 
-    /** Ask the engine for a fresh session, whatever is held. The retry action. */
+    /**
+     * Ask for the session again: the stored one when there is one, the engine's own
+     * otherwise. The retry action.
+     */
     fun reload() {
         publish(state.copy(busy = true))
-        scope.launch { publish(loaded(engine.start())) }
+        reopen()
+    }
+
+    /** Reopen the last session, or open the engine's own when there is none. */
+    private fun reopen() {
+        scope.launch { publish(opened(store.read())) }
+    }
+
+    /**
+     * The session to show for what the store answered.
+     *
+     * A stored page is handed to the engine for its own view of it — surfaces,
+     * details, slots and analysis included — rather than reconstructed here. A
+     * refusal is not a failure of the session: the engine's own session opens and
+     * the reason is shown beside it, while the refused bytes stay on disk.
+     */
+    private suspend fun opened(stored: StoredSession): SessionState = when (stored) {
+        is StoredSession.None -> loaded(engine.start())
+        is StoredSession.Refused -> loaded(engine.start()).copy(error = stored.reason)
+        is StoredSession.Restored -> {
+            storedRevision = stored.revision
+            loaded(engine.restore(stored.page))
+        }
     }
 
     /** Send one page event; the engine's reducer decides what it does. */
@@ -462,11 +501,31 @@ class SessionStateHolder(
      * design's transition table asks for.
      */
     private fun loaded(load: SessionLoad): SessionState = when (load) {
-        is SessionLoad.Ready -> knownQuality(
-            state.copy(view = load.view, error = null, busy = false),
+        is SessionLoad.Ready -> record(
+            knownQuality(state.copy(view = load.view, error = null, busy = false)),
         )
 
         is SessionLoad.Failed -> state.copy(error = load.reason, busy = false)
+    }
+
+    /**
+     * Write the accepted page down, and report a write that could not be made.
+     *
+     * Every accepted transition goes through here, and only an accepted one: a
+     * draft, a picker choice or a sheet that was cancelled never reaches
+     * [loaded], so what is stored is the committed page and nothing else. A write
+     * that fails is a sentence shown beside a session that keeps working — the
+     * engine's page is not rolled back because a disk was full.
+     */
+    private fun record(next: SessionState): SessionState {
+        val page = next.view?.state ?: return next
+        storedRevision += 1
+        val revision = storedRevision
+        scope.launch {
+            val outcome = store.write(revision, page)
+            if (outcome is StoreOutcome.Failed) publish(state.copy(error = outcome.reason))
+        }
+        return next
     }
 
     /**

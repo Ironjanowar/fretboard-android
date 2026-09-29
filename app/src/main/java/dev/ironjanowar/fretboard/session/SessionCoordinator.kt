@@ -147,9 +147,20 @@ private fun analyzeQuietly(state: PageStateDto): SessionAnalysis = try {
 }
 
 /** The fresh session: the engine's default state plus the two frozen catalogs. */
-suspend fun startSession(): SessionLoad = withContext(Dispatchers.Default) {
+suspend fun startSession(): SessionLoad = restoreSession(defaultState())
+
+/**
+ * The engine's own view of one page state the client already holds.
+ *
+ * This is the same derivation a fresh session goes through — the surfaces, the
+ * chord details, the colour slots, the analysis and the catalogs are all asked for
+ * again — so a page read back from disk cannot arrive on screen as a half-built
+ * session, and no client-side reconstruction of a stored page exists to drift from
+ * the engine's own.
+ */
+suspend fun restoreSession(state: PageStateDto): SessionLoad = withContext(Dispatchers.Default) {
     try {
-        SessionLoad.Ready(derive(defaultState(), instruments(), qualityGroups()))
+        SessionLoad.Ready(derive(state, instruments(), qualityGroups()))
     } catch (error: Throwable) {
         SessionLoad.Failed(engineFailure(error))
     }
