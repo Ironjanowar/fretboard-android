@@ -100,15 +100,25 @@ fun adapterSentence(error: AdapterException): String = when (error) {
 /**
  * The English sentence shown for a failed engine call.
  *
- * A failure is never dressed up as a plausible answer: the screen says the
- * engine refused and names the variant and the sentence the binding carried.
+ * A failure is never dressed up as a plausible answer. Two kinds are kept apart:
+ *
+ * * a **typed refusal** — the engine itself answered, so the sentence names the
+ *   error variant and repeats what the domain wrote;
+ * * **anything else** — the call never reached a musical answer at all. That is a
+ *   host failure (a missing library, a refused native thread, an out-of-memory),
+ *   so the sentence names the exception's own *class* and keeps its message. The
+ *   class is what tells one host failure from another; without it, a device report
+ *   like "stack size 4109KB" cannot be attributed to anything, because that text
+ *   belongs to the platform and not to this application.
  */
 fun engineFailure(error: Throwable): String = when (error) {
     is AdapterException ->
         "The engine rejected the request (${error::class.simpleName ?: "AdapterError"}): " +
             adapterSentence(error)
     else ->
-        "The engine could not be loaded: ${error.message ?: error.toString()}"
+        "The engine call did not complete " +
+            "(${error::class.simpleName ?: error::class.java.name}): " +
+            (error.message ?: error.toString())
 }
 
 /** Ask the engine for every answer the screen shows, off the main thread. */

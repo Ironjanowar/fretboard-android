@@ -108,7 +108,10 @@ fun EvaluationFailed(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            text = "Not available",
+            // Not the "not built yet" placeholder's wording: this panel is a call
+            // that was made and came back with nothing, which is a different
+            // statement, and the reason below says which kind it was.
+            text = "The engine did not answer",
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleSmall,

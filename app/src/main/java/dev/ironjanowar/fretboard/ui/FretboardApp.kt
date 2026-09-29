@@ -5,11 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -116,6 +119,13 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // The window is edge to edge — mandatory from `targetSdk 35` on — so the
+            // system bars' insets are applied to the *viewport*, not to the content:
+            // the header is never drawn under the clock, the bottom of the screen is
+            // never under the navigation bar, and scrolling cannot slide content
+            // behind either. Without this the two sheet buttons sat behind the
+            // status bar on a real device.
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .verticalScroll(rememberScrollState())
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -342,7 +352,10 @@ private fun ErrorBanner(message: String, onRetry: () -> Unit, enabled: Boolean) 
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            text = "Not available",
+            // This banner covers a refused call, a failed call and a failed write,
+            // so it says what happened to the request rather than borrowing the
+            // "not built yet" wording of a pending capability.
+            text = "The request could not be completed",
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleSmall,
