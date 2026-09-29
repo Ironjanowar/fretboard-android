@@ -10,6 +10,7 @@ import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
 import dev.ironjanowar.fretboard.core.KeySuggestionDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.links.DeliveredText
 import dev.ironjanowar.fretboard.session.BindingKeySuggestionEngine
 import dev.ironjanowar.fretboard.session.EvaluationCoordinator
 import dev.ironjanowar.fretboard.session.EvaluationUiState
@@ -99,6 +100,15 @@ class FretboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     /** Ask the engine for the session again. The retry action. */
     fun reload() = holder.reload()
+
+    /**
+     * Hand one delivered link in, and let it win (task `A19`).
+     *
+     * The activity reads its intent — a launch that carried a link, or one that arrived
+     * while a session was on screen — and hands the *delivery* over here; whether there
+     * is a session in it, and what it means, is the parser's and the engine's business.
+     */
+    fun deliver(delivered: DeliveredText) = holder.deliver(delivered)
 
     fun applyEvent(event: PageEventDto) = holder.applyEvent(event)
 
