@@ -1,7 +1,7 @@
 {
-  "artifact_version": "0.2.0",
-  "sha256": "028ac66b186d357e73dd1b79d40923a5f8fdf6ab9afead4cb13b3728e861ae8c",
+  "artifact_version": "0.3.0",
+  "sha256": "d549228e1cebed2396e2e4c04cc3606d5efc89442b6925405ea51d9c46c0f4e5",
   "abi": "arm64-v8a",
   "uniffi_runtime_dependency": "net.java.dev.jna:jna:5.17.0",
-  "source_commit": "b5f32bf78278e7c57db59337fb84d1a7fcc70737"
+  "source_commit": "60457b18a466f2da85ac9a93bf62fc63107cecea"
 }
