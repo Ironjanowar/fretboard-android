@@ -1,7 +1,7 @@
 # Build contract
 
-The first testable build (plan phase P1). Everything here is either pinned and
-verified, or explicitly out of scope.
+The testable builds of the Android application (plan phases P1 and P2).
+Everything here is either pinned and verified, or explicitly out of scope.
 
 ## Pinned toolchain
 
@@ -26,7 +26,7 @@ is per-variant (`testDebugUnitTest`).
 
 The application never builds the core. It consumes one AAR:
 
-* coordinates: `dev.ironjanowar:fretboard-engine:0.1.0`
+* coordinates: `dev.ironjanowar:fretboard-engine:0.2.0`
 * identity: `core-release.lock.json` (`sha256`, `source_commit`,
   `uniffi_runtime_dependency`, `abi`)
 * installation: `scripts/prepare_core.py` verifies the digest and the embedded
@@ -70,7 +70,7 @@ dd052b729e1349442ff8d94f225c9148565ebcd54245bbdac7523bcff2ac680c
 Unit tests: 4 run, 0 failures (`TuningTextTest`, pinning the unsigned reading of
 the binding's `ByteArray` pitches).
 
-## Out of scope for this build
+## Out of scope for the P1 build
 
 * No device or emulator was available, so the APK's *runtime* behaviour is not
   verified here: it is verified structurally (signature, package, ABI, native
@@ -79,3 +79,47 @@ the binding's `ByteArray` pitches).
   generated bindings need their own verification task.
 * No persistence, no chord/scale pickers, no URL state: the milestone's screen is
   a single engine round-trip.
+
+## Evidence of the P2 build (visualizer screen)
+
+```sh
+$ python3 scripts/prepare_core.py --offline
+verified engine/maven/dev/ironjanowar/fretboard-engine/0.2.0/fretboard-engine-0.2.0.aar
+$ ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+BUILD SUCCESSFUL in 16s
+$ apksigner verify --print-certs fretboard-0.2.0-arm64-release.apk
+Signer #1 certificate SHA-256 digest: 98785d6b9bf00f1440506facec750b034f1caa411c72fdb96fca38af8693a949
+$ aapt2 dump badging fretboard-0.2.0-arm64-release.apk
+package: name='dev.ironjanowar.fretboard' versionCode='2' versionName='0.2.0'
+minSdkVersion:'29'  targetSdkVersion:'37'  native-code: 'arm64-v8a'
+uses-permission: name='dev.ironjanowar.fretboard.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+$ sha256sum fretboard-0.2.0-arm64-release.apk
+4889fc63612c023dade62f1680c3237f8af05c35fc1f20dee1ee59200031c3b5
+```
+
+Unit tests: 32 run, 0 failures (`PaletteTest`, `FretboardGeometryTest`,
+`CardModelTest`, `ClaimedPositionsTest`, and P1's `TuningTextTest`).
+
+What Kotlin is allowed to decide, and is therefore what the tests pin: the
+palette and its wrap (slot rem palette length, from the frozen fixture
+`fixtures/oracle/surfaces.jsonl` in the core repository), the note paint
+(`Overlap` with an *empty* membership list means "no chord claims this note", not
+"overlap"), the surface geometry (25 columns, the open column distinct from fret
+1, fret 24 inside the surface, inlay markers), and the card model (positional
+note–interval pairing kept in the engine's order, slot lookup per occurrence).
+
+What this build does **not** verify: the app was never run — the environment has
+no emulator (`/dev/kvm` absent) and no device, so runtime behaviour is the user's
+manual check, exactly as in P1. Instrument changes, highlight toggling and the
+reducer's duplicate rules run only in the engine's own tests plus the user's
+device, not in this repository's unit tests (they need the arm64 native library,
+which cannot load on the build host).
+
+## Out of scope for the P2 build
+
+* The keyboard visualizer and the analyzer tab render an explicit English
+  placeholder; the engine already answers `keyboardSurface`, the screens are P3
+  and P4.
+* No tuning sheet, no key/progression sheets, no URL import or persistence.
+* No instrumented (`androidTest`) suite runs here: no emulator is available.
+* Shrinking is still off.

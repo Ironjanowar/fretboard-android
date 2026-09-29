@@ -1,51 +1,69 @@
 package dev.ironjanowar.fretboard.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import dev.ironjanowar.fretboard.core.AdapterException
 import dev.ironjanowar.fretboard.core.ChordDto
+import dev.ironjanowar.fretboard.core.InstrumentDto
 import dev.ironjanowar.fretboard.core.InstrumentStateDto
-import dev.ironjanowar.fretboard.core.chordDetails
-import dev.ironjanowar.fretboard.core.defaultState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.session.SessionLoad
+import dev.ironjanowar.fretboard.session.SessionView
+import dev.ironjanowar.fretboard.session.applyEvent
+import dev.ironjanowar.fretboard.session.lastFret
+import dev.ironjanowar.fretboard.session.selectInstrument
+import dev.ironjanowar.fretboard.session.startSession
+import dev.ironjanowar.fretboard.ui.common.PillChip
+import dev.ironjanowar.fretboard.ui.controls.InstrumentPicker
+import dev.ironjanowar.fretboard.ui.visualizer.VisualizerScreen
+import kotlinx.coroutines.launch
 
-/**
- * What the first real engine call produced.
- *
- * The application shows an explicit English state for each case and never a
- * plausible fake answer: a failure is a failure, not an empty chord.
- */
-sealed interface EngineOutcome {
-    /** The call has not finished yet. */
-    data object Loading : EngineOutcome
-
-    /** The engine answered: these strings are the engine's own values. */
-    data class Ready(
-        val instrument: String,
-        val tuning: String,
-        val chordLabel: String,
-        val notes: List<String>,
-    ) : EngineOutcome
-
-    /** The engine could not answer, for a reason that is shown to the user. */
-    data class Failed(val reason: String) : EngineOutcome
-}
+/** The application's dark theme: the frozen chord palette over a near-black UI. */
+private val FretboardTheme = darkColorScheme(
+    primary = Color(0xFF4FC3F7),
+    onPrimary = Color(0xFF10131A),
+    secondary = Color(0xFFFF8A65),
+    onSecondary = Color(0xFF10131A),
+    background = Color(0xFF11151A),
+    onBackground = Color(0xFFECEFF1),
+    surface = Color(0xFF1A1F26),
+    onSurface = Color(0xFFECEFF1),
+    surfaceVariant = Color(0xFF2A313A),
+    onSurfaceVariant = Color(0xFFB0BEC5),
+    outline = Color(0xFF546E7A),
+    error = Color(0xFFFF8A80),
+)
 
 /**
  * The display text of a tuning state: its reference and the exact pitches, in
@@ -59,69 +77,243 @@ sealed interface EngineOutcome {
 fun describeTuning(reference: String, pitches: ByteArray): String =
     "$reference ${pitches.map { byte -> byte.toInt() and 0xFF }.joinToString("-")}"
 
-/**
- * Ask the engine for the default state and for C major.
- *
- * This is deliberately the whole "session" of the first milestone: it proves the
- * generated bindings load, call across UniFFI and come back with the engine's
- * own values. The native call runs off the main thread.
- */
-suspend fun loadEngineOutcome(): EngineOutcome = withContext(Dispatchers.Default) {
-    try {
-        val state = defaultState()
-        val (instrument, tuning) = when (val value = state.instrument) {
-            is InstrumentStateDto.Fretted ->
-                value.instrument.name to describeTuning(value.tuning.reference, value.tuning.pitches)
-            is InstrumentStateDto.Piano -> "PIANO" to "keys"
-        }
+/** The two views of the same session. */
+private enum class FretboardTab(val title: String) {
+    Visualizer("Visualizer"),
+    Analyzer("Analyzer"),
+}
 
-        val details = chordDetails(ChordDto("C", "major"))
-        EngineOutcome.Ready(
-            instrument = instrument,
-            tuning = tuning,
-            chordLabel = details.label,
-            notes = details.notes,
-        )
-    } catch (error: AdapterException) {
-        // The sealed hierarchy names the failure; the sentence and the field live
-        // on each variant, while the base type only renders them into `message`.
-        // A Kotlin-facing accessor on the base type belongs to the binding work,
-        // not to the screen.
-        val variant = error::class.simpleName ?: "AdapterError"
-        EngineOutcome.Failed("The engine rejected the request ($variant): ${error.message}")
-    } catch (error: Throwable) {
-        EngineOutcome.Failed("The engine could not be loaded: ${error.message ?: error.toString()}")
+/** The whole screen: the engine's catalogs, the controls and the visualizer. */
+@Composable
+fun FretboardApp() {
+    MaterialTheme(colorScheme = FretboardTheme) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+        ) {
+            FretboardScreen()
+        }
     }
 }
 
-/** The first screen: the application's name and the engine's real answer. */
 @Composable
-fun FretboardApp() {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            var outcome by remember { mutableStateOf<EngineOutcome>(EngineOutcome.Loading) }
-            LaunchedEffect(Unit) { outcome = loadEngineOutcome() }
+private fun FretboardScreen() {
+    // The last valid session is kept while an action fails, so a rejected action
+    // never wipes what the user already has on screen: the error is shown beside
+    // the state, as the design's transition table requires.
+    var view by remember { mutableStateOf<SessionView?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(true) }
+    var tab by remember { mutableStateOf(FretboardTab.Visualizer) }
+    var root by remember { mutableStateOf("C") }
+    var quality by remember { mutableStateOf("major") }
+    val scope = rememberCoroutineScope()
 
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text("Fretboard", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(16.dp))
-                when (val current = outcome) {
-                    EngineOutcome.Loading -> CircularProgressIndicator()
-                    is EngineOutcome.Ready -> {
-                        Text("Engine answered", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Instrument: ${current.instrument}")
-                        Text("Tuning: ${current.tuning}")
-                        Text("C major: ${current.chordLabel}")
-                        Text("Notes: ${current.notes.joinToString(", ")}")
-                    }
-                    is EngineOutcome.Failed -> {
-                        Text("Not available", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(8.dp))
-                        Text(current.reason)
-                    }
+    fun run(block: suspend () -> SessionLoad) {
+        busy = true
+        scope.launch {
+            when (val result = block()) {
+                is SessionLoad.Ready -> {
+                    view = result.view
+                    error = null
                 }
+                is SessionLoad.Failed -> error = result.reason
+            }
+            busy = false
+        }
+    }
+
+    LaunchedEffect(Unit) { run { startSession() } }
+
+    // The default quality must exist in the engine's own catalog: if the engine
+    // starts grouping differently, the first quality it sends is used instead of
+    // a client guess.
+    val loaded = view
+    LaunchedEffect(loaded?.qualityGroups) {
+        val groups = loaded?.qualityGroups ?: return@LaunchedEffect
+        val known = groups.flatMap { group -> group.qualities.map { it.quality } }
+        if (quality !in known) {
+            known.firstOrNull()?.let { quality = it }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Header(view, busy)
+        error?.let { message ->
+            ErrorBanner(message = message, onRetry = { run { startSession() } }, enabled = !busy)
+        }
+
+        val current = view
+        if (current == null) {
+            LoadingBlock()
+            return@Column
+        }
+
+        InstrumentPicker(
+            instruments = current.instruments,
+            selected = current.instrumentId(),
+            enabled = !busy,
+            onSelect = { definition ->
+                run { selectInstrument(current, definition) }
+            },
+        )
+
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FretboardTab.entries.forEach { candidate ->
+                PillChip(
+                    text = candidate.title,
+                    selected = candidate == tab,
+                    onClick = { tab = candidate },
+                    modifier = Modifier.testTag("tab-${candidate.name}"),
+                )
+            }
+        }
+
+        when (tab) {
+            FretboardTab.Visualizer -> VisualizerScreen(
+                view = current,
+                root = root,
+                quality = quality,
+                onRootChange = { root = it },
+                onQualityChange = { quality = it },
+                onAdd = {
+                    run { applyEvent(current, PageEventDto.AddChord(ChordDto(root, quality))) }
+                },
+                onRemove = { index ->
+                    run { applyEvent(current, PageEventDto.RemoveChord(index.toULong())) }
+                },
+                onToggleHighlight = { index ->
+                    run { applyEvent(current, PageEventDto.HighlightChord(index.toULong())) }
+                },
+                onClearAll = { run { applyEvent(current, PageEventDto.ClearAllChords) } },
+                enabled = !busy,
+            )
+
+            FretboardTab.Analyzer -> FeatureAvailability(
+                title = "Analyzer is not built yet",
+                detail =
+                    "This build shows the visualizer. The fretted analyzer — tapping a " +
+                        "position and reading the engine's interval answer — arrives in the " +
+                        "next phase, and this tab will hold it.",
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+    }
+}
+
+/** The compact title bar: the app name, the instrument and its tuning. */
+@Composable
+private fun Header(view: SessionView?, busy: Boolean) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Fretboard",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.width(10.dp))
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .height(16.dp)
+                        .width(16.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+        view?.let { current ->
+            val instrument = current.state.instrument
+            val name = current.instrumentName()
+            val tuning = when (instrument) {
+                is InstrumentStateDto.Fretted ->
+                    describeTuning(instrument.tuning.reference, instrument.tuning.pitches)
+                is InstrumentStateDto.Piano -> "Keyboard"
+            }
+            Text(
+                text = "$name — $tuning",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("session-caption"),
+            )
+            val lastFret = current.lastFret()
+            if (lastFret != null) {
+                Text(
+                    text = "$lastFret frets, ${current.state.chords.size} active chords",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
         }
     }
+}
+
+/** A visible failure: an explicit English state, never a plausible fake answer. */
+@Composable
+private fun ErrorBanner(message: String, onRetry: () -> Unit, enabled: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "Not available",
+            color = MaterialTheme.colorScheme.error,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("engine-error"),
+        )
+        OutlinedButton(onClick = onRetry, enabled = enabled) {
+            Text("Try again")
+        }
+    }
+}
+
+/** A centred slot used while the first engine answer is still on its way. */
+@Composable
+private fun LoadingBlock() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp)
+            .testTag("engine-loading"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        CircularProgressIndicator()
+        Text(
+            text = "Asking the engine…",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+/** The instrument id of the current state, as the picker needs it. */
+private fun SessionView.instrumentId(): InstrumentDto = when (val instrument = state.instrument) {
+    is InstrumentStateDto.Fretted -> instrument.instrument
+    is InstrumentStateDto.Piano -> InstrumentDto.PIANO
+}
+
+/** The engine's display name for the current instrument, or its wire id. */
+private fun SessionView.instrumentName(): String {
+    val id = instrumentId()
+    return instruments.firstOrNull { it.instrument == id }?.name ?: id.name
 }
