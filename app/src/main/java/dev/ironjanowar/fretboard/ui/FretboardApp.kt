@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,7 @@ import dev.ironjanowar.fretboard.core.InstrumentStateDto
 import dev.ironjanowar.fretboard.core.PageEventDto
 import dev.ironjanowar.fretboard.core.PositionDto
 import dev.ironjanowar.fretboard.core.TabDto
+import dev.ironjanowar.fretboard.links.pastedText
 import dev.ironjanowar.fretboard.session.SessionView
 import dev.ironjanowar.fretboard.session.lastFret
 import dev.ironjanowar.fretboard.ui.analyzer.AnalyzerScreen
@@ -112,6 +114,10 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
     val session = fretboard.state
     val view = session.view
 
+    // A19: the explicit paste reads the clipboard *on the tap below* and nowhere else —
+    // the application never scrapes it, and nothing is read at startup.
+    val clipboard = LocalClipboardManager.current
+
     // Idempotent on purpose: this runs again after every rotation, and a session
     // that is already held must come back rather than be asked for again.
     LaunchedEffect(Unit) { fretboard.start() }
@@ -182,6 +188,17 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
                 ) {
                     Text("Tuning")
                 }
+            }
+
+            // A19: a pasted link is a delivery the user made by hand, so it takes the
+            // same path and the same rules as a shared one — there is no second, laxer
+            // way into the engine, and a refused paste says why instead of doing nothing.
+            TextButton(
+                onClick = { fretboard.deliver(pastedText(clipboard.getText()?.text)) },
+                enabled = !session.busy,
+                modifier = Modifier.testTag("paste-link"),
+            ) {
+                Text("Pegar enlace")
             }
         }
 
