@@ -28,6 +28,6 @@ dependencies {
     // It is installed into the local `engine/maven` repository by
     // `scripts/prepare_core.py`, which verifies its SHA-256 first; that
     // directory is never committed.
-    api("${libs.versions.fretboardEngine.get()}:fretboard-engine:0.2.0")
+    api("${libs.versions.fretboardEngine.get()}:fretboard-engine:0.3.0")
     api("net.java.dev.jna:jna:5.17.0@aar")
 }

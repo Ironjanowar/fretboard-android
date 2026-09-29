@@ -1,6 +1,6 @@
 # Build contract
 
-The testable builds of the Android application (plan phases P1 and P2).
+The testable builds of the Android application (plan phases P1–P3).
 Everything here is either pinned and verified, or explicitly out of scope.
 
 ## Pinned toolchain
@@ -123,3 +123,75 @@ which cannot load on the build host).
 * No tuning sheet, no key/progression sheets, no URL import or persistence.
 * No instrumented (`androidTest`) suite runs here: no emulator is available.
 * Shrinking is still off.
+
+## Evidence of the P3 build (fretted analyzer and tuning drafts)
+
+```sh
+$ python3 scripts/prepare_core.py --offline
+verified engine/maven/dev/ironjanowar/fretboard-engine/0.3.0/fretboard-engine-0.3.0.aar
+$ ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+BUILD SUCCESSFUL in 13s
+$ apksigner verify --print-certs fretboard-0.3.0-arm64-release.apk
+Verifies, v2 scheme, 1 signer
+Signer #1 certificate SHA-256 digest: 98785d6b9bf00f1440506facec750b034f1caa411c72fdb96fca38af8693a949
+$ aapt2 dump badging fretboard-0.3.0-arm64-release.apk
+package: name='dev.ironjanowar.fretboard' versionCode='3' versionName='0.3.0'
+minSdkVersion:'29'  targetSdkVersion:'37'  native-code: 'arm64-v8a'
+uses-permission: name='dev.ironjanowar.fretboard.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+$ sha256sum fretboard-0.3.0-arm64-release.apk
+f197a9cfdafaa31729bc4154cd47b1f827b4541f200a62c782ab31a18374ea72
+```
+
+The APK carries `lib/arm64-v8a/libfretboard_mobile_ffi.so` (the Rust engine) and
+its JNA runtime, and no network permission. Byte-for-byte reproducibility of
+the APK is not claimed: a rebuild of the same source produces a different
+archive (timestamps and signature), so the digest above identifies this
+delivered file, not the source revision.
+
+Unit tests: 77 run, 0 failures — the 45 that P3 added are `TuningDraftTest`
+(12, the draft lifecycle as a pure state machine over a scripted engine port),
+`SurfaceInputTest` (10, the hit grid and the 48dp floor), `FrettedAnalyzerTest`
+(8, the tap routing and the committed marks) and `AnalysisModelTest` (15, the
+typed-answer mapping, the three distinct analysis states and the missing-tone
+rendering), on top of P2's 32.
+
+What Kotlin is allowed to decide, and is therefore what the tests pin: which
+cell a tap owns and that nothing outside the grid produces an event, the string
+editor's physical order and labels, that a draft is a value the committed page
+never sees until Apply, that a stale draft is refused outright, the mapping from
+the engine's `AnalysisDto` (and its absence) to a rendered state, the positional
+note–interval pairing (`Contract.D01`, the approved baseline zip) and the
+spelling of the inversion. Every musical value — pitches, preset labels, note
+names, bases, labels, missing tones — is the engine's, taken from its DTOs.
+
+What this build does **not** verify: the app was never run — no emulator
+(`/dev/kvm` absent) and no device, as in P1/P2. The reducer's own rules (a tap on
+the same fret clears the mark, another fret replaces it, a preset commit, the
+fixed-reference nearest-pitch resolution) live in the engine and run in its own
+test suite and on the user's device; they cannot run on this host, where the
+arm64 native library does not load.
+
+## Out of scope or blocked for the P3 build
+
+* **The preset picker.** The pinned 0.3.0 artifact exports `openTuningDraft`,
+  `selectTuningPreset`, `changeTuningString`, `detectTuningPreset` and
+  `tuningNotes`, but no entry point that lists an instrument's preset *names* —
+  the core's own plan lands that catalog in `C21` (`catalogs()`). A picker would
+  therefore have to carry a hand-written list of names, which the boundary rules
+  forbid, so the sheet shows the engine's own detected preset label for the
+  draft's exact pitches (its `Custom` included) and edits the strings instead.
+  `DraftCoordinator.selectPreset` is implemented and unit-tested, ready to be
+  wired to a picker as soon as the engine enumerates the names.
+* The keyboard visualizer and the keyboard analyzer are P4; both render an
+  explicit English placeholder. The piano's analyzer is still reachable through
+  the instrument picker, unchanged from P2.
+* `ui/surface/SurfaceSemantics.kt` and `ui/analyzer/AnalysisModel.kt` are two
+  files the P3 task list did not name: the pure position labels and the pure
+  answer mapping are separated from the composables for the same reason
+  `CardModel.kt` was in P2 — a JVM unit test cannot reach into a Composable, and
+  these two carry the decisions that must be pinned.
+* No instrumented (`androidTest`) suite runs here: no emulator is available.
+  `TuningSheetTest`, `FrettedTouchTest` and `AnalysisCardsTest` are the
+  device-side tests the plan lists for P3 and none of them ran.
+* Shrinking is still off; no persistence, no URL import and no key/progression
+  sheets.

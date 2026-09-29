@@ -5,9 +5,9 @@ answers on screen are computed by the Rust core and reach Kotlin through the
 generated UniFFI bindings. Kotlin carries no musical logic — it moves DTOs across
 the boundary and draws them.
 
-## What this build contains (plan phase P2)
+## What this build contains (plan phase P3)
 
-One screen, the Visualizer:
+Two tabs of one screen:
 
 * an **instrument picker** built from the engine's own catalog — all five
   instruments in catalog order, with the engine's display names (the ukulele
@@ -25,8 +25,23 @@ One screen, the Visualizer:
   **and** every note with its interval role. Tapping a card highlights that
   identity (tapping it again clears), the ✕ removes that one occurrence, and
   *Clear chords* empties the list;
-* explicit English placeholders for what this build does not draw yet (the
-  keyboard visualizer and the analyzer tab).
+* the **Analyzer tab**: the same fretted surface, now actionable — tapping a
+  position sends the engine's `ToggleNote` event, which clears the string's mark
+  when it is the same fret and moves it when it is another one. *Clear notes* is
+  its own event. The engine's analysis of the selection is rendered as it
+  answers it: an instruction when nothing is selected, a single note, an
+  interval, the identifications (slash label, `exact`/`incomplete`/`partial`,
+  the note–interval pairs, the inversion and the bass) or *No chord found for
+  these notes*. A tone the engine reports as missing is shown as missing, never
+  filled in. The visualizer's chords are kept but never colour the analyzer;
+* the **Tuning sheet** (fretted instruments): it edits a draft — one note per
+  physical string, labelled `String N` down to `String 1` — and shows the
+  preset the engine detects for those exact pitches. *Apply* commits the draft
+  through the engine's own event; *Cancel* and dismissing the sheet discard it,
+  and reopening always starts from the committed tuning. The committed page is
+  never touched by an edit;
+* an explicit English placeholder for what this build does not draw yet (the
+  keyboard visualizer and the keyboard analyzer, phase P4).
 
 If the engine cannot answer, the screen says so in English and names the
 reason — it never shows a plausible fake answer.
@@ -34,7 +49,7 @@ reason — it never shows a plausible fake answer.
 ## Install it
 
 * Requires an **arm64** device with **Android 10 (API 29)** or newer.
-* With a cable and `adb`: `adb install -r fretboard-0.2.0-arm64-release.apk`
+* With a cable and `adb`: `adb install -r fretboard-0.3.0-arm64-release.apk`
 * Without a cable: copy the APK to the phone, tap it, and allow installing from
   that source when the system asks.
 

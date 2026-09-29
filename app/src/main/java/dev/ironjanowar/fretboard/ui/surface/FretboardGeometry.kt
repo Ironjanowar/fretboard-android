@@ -11,18 +11,19 @@ package dev.ironjanowar.fretboard.ui.surface
  *
  * The numbers are chosen so that a 24-fret instrument is legible and scrollable
  * on a phone (25 columns do not fit), never scaled down until the positions
- * become untouchable.
+ * become untouchable: every cell is at least `SurfaceInput.MIN_TARGET_DP` wide
+ * and tall, so the analyzer's whole cells are valid touch targets (A10).
  */
 object FretboardGeometry {
 
-    /** Width of a stopped column (fret 1..last). */
-    const val CELL_WIDTH_DP: Float = 46f
+    /** Width of a stopped column (fret 1..last); an analyzer cell, so at least 48dp. */
+    const val CELL_WIDTH_DP: Float = 48f
 
     /** Width of the open-string column: wider, so it is visibly not a fret. */
     const val OPEN_CELL_WIDTH_DP: Float = 66f
 
-    /** Height of one string row. */
-    const val ROW_HEIGHT_DP: Float = 46f
+    /** Height of one string row; an analyzer cell, so at least 48dp. */
+    const val ROW_HEIGHT_DP: Float = 48f
 
     /** Height of the fret-number header above the first string. */
     const val HEADER_HEIGHT_DP: Float = 26f
