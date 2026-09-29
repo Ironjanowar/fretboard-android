@@ -17,10 +17,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.ironjanowar.fretboard.core.FrettedSurfaceDto
+import dev.ironjanowar.fretboard.core.KeyRowDto
+import dev.ironjanowar.fretboard.core.KeySuggestionDto
+import dev.ironjanowar.fretboard.core.MultiKeyGroupDto
+import dev.ironjanowar.fretboard.session.EvaluationState
 import dev.ironjanowar.fretboard.session.SessionView
 import dev.ironjanowar.fretboard.session.lastFret
 import dev.ironjanowar.fretboard.ui.FeatureAvailability
 import dev.ironjanowar.fretboard.ui.controls.ChordEditor
+import dev.ironjanowar.fretboard.ui.keys.KeySuggestionsPanel
+import dev.ironjanowar.fretboard.ui.keys.MultiKeySuggestionsPanel
 import dev.ironjanowar.fretboard.ui.surface.FretboardSurface
 import dev.ironjanowar.fretboard.ui.surface.PianoSurface
 import dev.ironjanowar.fretboard.ui.surface.SurfacePalette
@@ -57,6 +63,14 @@ fun VisualizerScreen(
     onRemove: (Int) -> Unit,
     onToggleHighlight: (Int) -> Unit,
     onClearAll: () -> Unit,
+    keyRows: EvaluationState<List<KeyRowDto>>,
+    multiKeyGroups: EvaluationState<List<MultiKeyGroupDto>>,
+    keyExpanded: Boolean,
+    onToggleKeyExpansion: () -> Unit,
+    onApplySuggestion: (KeySuggestionDto) -> Unit,
+    onRetryKeys: () -> Unit,
+    onOpenKey: () -> Unit,
+    onOpenProgression: () -> Unit,
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -70,6 +84,30 @@ fun VisualizerScreen(
             onAdd = onAdd,
             enabled = enabled,
         )
+
+        // The two replacement actions, visualizer-only like the Add control: the
+        // key and progression sheets open on the plan's fresh drafts.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextButton(
+                onClick = onOpenKey,
+                enabled = enabled,
+                modifier = Modifier.testTag("open-key"),
+            ) {
+                Text("Key")
+            }
+            TextButton(
+                onClick = onOpenProgression,
+                enabled = enabled,
+                modifier = Modifier.testTag("open-progression"),
+            ) {
+                Text("Progressions")
+            }
+        }
 
         val keyboard = view.keyboard
         val lastFret = view.lastFret()
@@ -119,6 +157,23 @@ fun VisualizerScreen(
             onRemove = onRemove,
             onToggleHighlight = onToggleHighlight,
             onClearAll = onClearAll,
+            enabled = enabled,
+        )
+
+        // A15's two panels: the engine's own key rows and, when it answered no
+        // rows, its multi-key groups. Both render exactly what the engine sent.
+        KeySuggestionsPanel(
+            chordCount = view.state.chords.size,
+            state = keyRows,
+            expanded = keyExpanded,
+            onToggleExpanded = onToggleKeyExpansion,
+            onApplySuggestion = onApplySuggestion,
+            onRetry = onRetryKeys,
+            enabled = enabled,
+        )
+        MultiKeySuggestionsPanel(
+            groups = multiKeyGroups,
+            onRetry = onRetryKeys,
             enabled = enabled,
         )
     }

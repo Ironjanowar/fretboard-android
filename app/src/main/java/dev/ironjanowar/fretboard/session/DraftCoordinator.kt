@@ -1,16 +1,25 @@
 package dev.ironjanowar.fretboard.session
 
+import dev.ironjanowar.fretboard.core.ChordDto
+import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDto
 import dev.ironjanowar.fretboard.core.InstrumentStateDto
+import dev.ironjanowar.fretboard.core.KeySuggestionDto
 import dev.ironjanowar.fretboard.core.PageEventDto
 import dev.ironjanowar.fretboard.core.PageStateDto
+import dev.ironjanowar.fretboard.core.ProgressionGroupDto
 import dev.ironjanowar.fretboard.core.TuningDto
 import dev.ironjanowar.fretboard.core.applyPageEvent
 import dev.ironjanowar.fretboard.core.changeTuningString
 import dev.ironjanowar.fretboard.core.detectTuningPreset
+import dev.ironjanowar.fretboard.core.diatonicChords
 import dev.ironjanowar.fretboard.core.openTuningDraft
+import dev.ironjanowar.fretboard.core.progressionChords
+import dev.ironjanowar.fretboard.core.progressions
 import dev.ironjanowar.fretboard.core.selectTuningPreset
 import dev.ironjanowar.fretboard.core.tuningNotes
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The engine operations a tuning draft needs.
@@ -195,3 +204,238 @@ fun PageStateDto.frettedInstrument(): InstrumentDto? =
  * port is the pinned binding.
  */
 val TUNING_DRAFTS: DraftCoordinator = DraftCoordinator(BindingTuningEngine)
+
+// ------------------------------------------------------- key and progression
+
+/**
+ * The engine operations a key or progression draft needs.
+ *
+ * A14 keeps the draft lifecycle in Kotlin (open, edit, preview, apply, cancel)
+ * while every musical value stays the engine's: a key's diatonic chords, a
+ * progression's own chord list and the catalog the picker lists. The port exists
+ * so the lifecycle can be pinned on the JVM, where the arm64 native library
+ * cannot be loaded; the production implementation is
+ * [BindingKeyProgressionEngine] and computes nothing.
+ */
+interface KeyProgressionEngine {
+    /** The key draft's preview: the diatonic chords of a key in the draft's mode. */
+    suspend fun keyPreview(tonic: String, scale: String, mode: ChordModeDto): List<ChordDto>
+
+    /** The progression draft's preview: one chord per degree, repeats included. */
+    suspend fun progressionPreview(tonic: String, progression: String): List<ChordDto>
+
+    /** The progression catalog, grouped as the picker shows it, in the frozen order. */
+    suspend fun progressionCatalog(): List<ProgressionGroupDto>
+}
+
+/**
+ * The production port: the pinned bindings, called as they are, off the main
+ * thread.
+ *
+ * Each call is the engine's own entry point and its own answer is handed back:
+ * no chord is computed here and no catalog is curated here.
+ */
+object BindingKeyProgressionEngine : KeyProgressionEngine {
+
+    override suspend fun keyPreview(tonic: String, scale: String, mode: ChordModeDto): List<ChordDto> =
+        withContext(Dispatchers.Default) { diatonicChords(tonic, scale, mode) }
+
+    override suspend fun progressionPreview(tonic: String, progression: String): List<ChordDto> =
+        withContext(Dispatchers.Default) { progressionChords(tonic, progression) }
+
+    override suspend fun progressionCatalog(): List<ProgressionGroupDto> =
+        withContext(Dispatchers.Default) { progressions() }
+}
+
+/**
+ * The plan's fresh key draft: opening the modal starts at C major triad (A14).
+ *
+ * These are wire tokens and an engine enum, not musical values: the client picks
+ * the plan's own starting point and the engine answers the preview for it.
+ */
+const val FRESH_KEY_TONIC: String = "C"
+const val FRESH_KEY_SCALE: String = "major"
+val FRESH_KEY_MODE: ChordModeDto = ChordModeDto.TRIAD
+
+/**
+ * The plan's fresh progression draft: opening the modal starts at
+ * `pop_i_v_vi_iv` in C (A14).
+ */
+const val FRESH_PROGRESSION_TONIC: String = "C"
+const val FRESH_PROGRESSION: String = "pop_i_v_vi_iv"
+
+/** The two chord modes the key sheet offers, in the order the sheet shows them. */
+val CHORD_MODES: List<ChordModeDto> = listOf(ChordModeDto.TRIAD, ChordModeDto.SEVENTH)
+
+/** The English label of a chord mode choice. */
+fun chordModeLabel(mode: ChordModeDto): String = when (mode) {
+    ChordModeDto.TRIAD -> "Triad"
+    ChordModeDto.SEVENTH -> "Seventh"
+}
+
+/**
+ * One open key draft: the user's three choices plus the engine's own preview of
+ * them.
+ *
+ * `preview` is the engine's `diatonic_chords` answer for exactly these three
+ * fields, so the sheet never computes a chord: it shows the list the engine
+ * answered for the key the draft holds.
+ */
+data class KeyDraft(
+    val tonic: String,
+    val scale: String,
+    val mode: ChordModeDto,
+    val preview: List<ChordDto>,
+)
+
+/**
+ * One open progression draft: the tonic and the catalog identifier, plus the
+ * engine's own chord list for them.
+ *
+ * `preview` has one entry per degree, repeats included, so a progression that
+ * plays the same chord twice shows both occurrences — the apply commits the same
+ * list rather than merging it.
+ */
+data class ProgressionDraft(
+    val tonic: String,
+    val progression: String,
+    val preview: List<ChordDto>,
+)
+
+/**
+ * What the progression sheet's catalog picker shows.
+ *
+ * The catalog is never a client list: it is the engine's own grouped catalog
+ * (`progressions()`), in the engine's own order. Like the tuning sheet's preset
+ * picker it has three states and no fourth: the engine's groups, the engine's
+ * "none", or the engine's refusal.
+ */
+sealed interface ProgressionCatalogState {
+    /** The engine lists no progressions at all. */
+    data object NotApplicable : ProgressionCatalogState
+
+    /** The engine's own groups, in the engine's own order, unfiltered. */
+    data class Ready(val groups: List<ProgressionGroupDto>) : ProgressionCatalogState
+
+    /** The engine refused or could not be reached; the reason is shown, not hidden. */
+    data class Refused(val reason: String) : ProgressionCatalogState
+}
+
+/** The plan's fresh key draft, before the engine's preview arrives. */
+fun freshKeyDraft(): KeyDraft = KeyDraft(
+    tonic = FRESH_KEY_TONIC,
+    scale = FRESH_KEY_SCALE,
+    mode = FRESH_KEY_MODE,
+    preview = emptyList(),
+)
+
+/** The plan's fresh progression draft, before the engine's preview arrives. */
+fun freshProgressionDraft(): ProgressionDraft = ProgressionDraft(
+    tonic = FRESH_PROGRESSION_TONIC,
+    progression = FRESH_PROGRESSION,
+    preview = emptyList(),
+)
+
+/**
+ * The key and progression draft lifecycle, with every musical value from the
+ * engine.
+ *
+ * The drafts are values: opening one reads the engine's preview for the plan's
+ * fresh starting point, editing one asks the engine for a new preview, and
+ * neither ever touches the committed page — the page changes only when the
+ * engine's own `CommitKeys` / `CommitProgression` event is applied by the
+ * session (A14's replacement rule), which is why this class has no commit path
+ * and never assembles a page.
+ */
+class KeyProgressionDrafts(private val engine: KeyProgressionEngine) {
+
+    /**
+     * Open a fresh key draft.
+     *
+     * Reopening always starts from the plan's fresh C major triad, so a cancelled
+     * or edited draft can never leak into the next open.
+     */
+    suspend fun openKey(): KeyDraft = previewKey(
+        tonic = FRESH_KEY_TONIC,
+        scale = FRESH_KEY_SCALE,
+        mode = FRESH_KEY_MODE,
+    )
+
+    /**
+     * Edit a key draft and re-read the preview from the engine.
+     *
+     * The three fields are the sheet's choice; the chord list is the engine's
+     * answer for them, so an edit changes only the draft and never the page.
+     */
+    suspend fun previewKey(tonic: String, scale: String, mode: ChordModeDto): KeyDraft =
+        KeyDraft(
+            tonic = tonic,
+            scale = scale,
+            mode = mode,
+            preview = engine.keyPreview(tonic, scale, mode),
+        )
+
+    /** Open a fresh progression draft: the plan's `pop_i_v_vi_iv` in C. */
+    suspend fun openProgression(): ProgressionDraft = previewProgression(
+        tonic = FRESH_PROGRESSION_TONIC,
+        progression = FRESH_PROGRESSION,
+    )
+
+    /** Select a progression from the picker and re-read its chords from the engine. */
+    suspend fun previewProgression(tonic: String, progression: String): ProgressionDraft =
+        ProgressionDraft(
+            tonic = tonic,
+            progression = progression,
+            preview = engine.progressionPreview(tonic, progression),
+        )
+
+    /** The engine's grouped progression catalog, or an explicit refusal. */
+    suspend fun catalog(): ProgressionCatalogState = try {
+        val groups = engine.progressionCatalog()
+        if (groups.isEmpty()) {
+            ProgressionCatalogState.NotApplicable
+        } else {
+            ProgressionCatalogState.Ready(groups)
+        }
+    } catch (failure: Throwable) {
+        ProgressionCatalogState.Refused(engineFailure(failure))
+    }
+
+    /**
+     * The engine's own key-commit event for this draft.
+     *
+     * The client hands the three fields over and the engine replaces the page's
+     * chords with that key's diatonic chords in that mode, clears the highlight
+     * and keeps everything else; the replacement rule is the engine's, so it is
+     * never re-implemented here.
+     */
+    fun keyEvent(draft: KeyDraft): PageEventDto = PageEventDto.CommitKeys(
+        tonic = draft.tonic,
+        scale = draft.scale,
+        mode = draft.mode,
+    )
+
+    /**
+     * The engine's own progression-commit event for this draft.
+     *
+     * The engine replaces the chords with the progression's own list, repeats
+     * and all, and clears the highlight.
+     */
+    fun progressionEvent(draft: ProgressionDraft): PageEventDto = PageEventDto.CommitProgression(
+        tonic = draft.tonic,
+        progression = draft.progression,
+    )
+
+    /**
+     * The engine's own event for applying a *suggested* key.
+     *
+     * Deliberately the mode-free `CommitSuggestedKeys`: the engine infers the
+     * mode from the chords already on the page, so an apply from the keys panel
+     * never carries the key sheet's previous mode.
+     */
+    fun suggestedKeyEvent(suggestion: KeySuggestionDto): PageEventDto =
+        PageEventDto.CommitSuggestedKeys(
+            tonic = suggestion.tonic,
+            scale = suggestion.scale,
+        )
+}
