@@ -22,6 +22,7 @@ import dev.ironjanowar.fretboard.session.lastFret
 import dev.ironjanowar.fretboard.ui.FeatureAvailability
 import dev.ironjanowar.fretboard.ui.controls.ChordEditor
 import dev.ironjanowar.fretboard.ui.surface.FretboardSurface
+import dev.ironjanowar.fretboard.ui.surface.PianoSurface
 import dev.ironjanowar.fretboard.ui.surface.SurfacePalette
 
 /**
@@ -70,14 +71,31 @@ fun VisualizerScreen(
             enabled = enabled,
         )
 
+        val keyboard = view.keyboard
         val lastFret = view.lastFret()
         val surface = view.surface
-        if (surface == null || lastFret == null) {
+        if (keyboard != null) {
+            // The keyboard: the same informative surface family, one key per
+            // pitch the engine answers, with the engine's chord marks painted.
+            PianoSurface(
+                surface = keyboard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("keyboard-surface"),
+            )
+            Text(
+                text = "Swipe the keyboard sideways: the engine's keys, note names and " +
+                    "the active chords' markers.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        } else if (surface == null || lastFret == null) {
             FeatureAvailability(
-                title = "Keyboard visualizer is not built yet",
+                title = "No surface for this instrument",
                 detail =
-                    "This build draws the fretted surface only. The engine already " +
-                        "answers the keyboard surface; the screen for it arrives in a later phase.",
+                    "The engine answered neither a fretted surface nor a keyboard " +
+                        "for this page, so there is nothing to draw.",
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         } else {

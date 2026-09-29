@@ -5,7 +5,7 @@ answers on screen are computed by the Rust core and reach Kotlin through the
 generated UniFFI bindings. Kotlin carries no musical logic — it moves DTOs across
 the boundary and draws them.
 
-## What this build contains (plan phase P3)
+## What this build contains (plan phase P4)
 
 Two tabs of one screen:
 
@@ -36,12 +36,26 @@ Two tabs of one screen:
   filled in. The visualizer's chords are kept but never colour the analyzer;
 * the **Tuning sheet** (fretted instruments): it edits a draft — one note per
   physical string, labelled `String N` down to `String 1` — and shows the
-  preset the engine detects for those exact pitches. *Apply* commits the draft
-  through the engine's own event; *Cancel* and dismissing the sheet discard it,
-  and reopening always starts from the committed tuning. The committed page is
-  never touched by an edit;
-* an explicit English placeholder for what this build does not draw yet (the
-  keyboard visualizer and the keyboard analyzer, phase P4).
+  preset the engine detects for those exact pitches. Its **preset picker** is
+  the engine's own ordered catalog (`presets(instrument)`): the frozen names in
+  the frozen order, nothing added and nothing filtered. *Apply* commits the
+  draft through the engine's own event; *Cancel* and dismissing the sheet
+  discard it, and reopening always starts from the committed tuning. The
+  committed page is never touched by an edit;
+* the **keyboard** (the piano): the same two tabs, drawn from the engine's own
+  `keyboardSurface(state)` instead of a fretboard — one key per pitch the engine
+  answers, in the engine's order, with the engine's note names and the engine's
+  chord marks. On the Analyzer tab a tap routes exactly one `TogglePianoKey`
+  carrying that key's own pitch, and the marks shown are the engine's committed
+  keys; the same pitch class in another octave is a different key. *Clear notes*
+  is the same event as on the fretboard;
+* the **instrument boundary**: switching instrument sends the engine's own
+  `SetInstrument` and shows exactly the page it answers. Crossing between the
+  keyboard and a fretted instrument converts nothing — the selection is cleared
+  by the engine, the chords and the tab are kept, and the highlight is cleared.
+  The active instrument is the picker's selected chip and the header caption,
+  and the keyboard's missing tuning is shown as *not applicable* rather than as
+  a control that could not work.
 
 If the engine cannot answer, the screen says so in English and names the
 reason — it never shows a plausible fake answer.
@@ -49,7 +63,7 @@ reason — it never shows a plausible fake answer.
 ## Install it
 
 * Requires an **arm64** device with **Android 10 (API 29)** or newer.
-* With a cable and `adb`: `adb install -r fretboard-0.3.0-arm64-release.apk`
+* With a cable and `adb`: `adb install -r fretboard-0.4.0-arm64-release.apk`
 * Without a cable: copy the APK to the phone, tap it, and allow installing from
   that source when the system asks.
 
@@ -64,7 +78,7 @@ SHA-256 in `core-release.lock.json`.
 
 ```sh
 # 1. Install the verified engine artifact into the local engine repository.
-python3 scripts/prepare_core.py --from /path/to/fretboard-engine-0.2.0.aar
+python3 scripts/prepare_core.py --from /path/to/fretboard-engine-0.4.0.aar
 python3 scripts/prepare_core.py --offline        # re-verify without rebuilding
 
 # 2. Build and test.

@@ -45,15 +45,17 @@ import dev.ironjanowar.fretboard.ui.visualizer.ROOT_WIRE_NAMES
  * pitch.
  *
  * The preset the sheet shows is the engine's own detection for the draft's exact
- * pitches (its `Custom` included). This engine build has no entry point that
- * lists an instrument's preset *names* — the core's own catalog of them is a
- * later task — so the sheet does not offer a dropdown of names it would have to
- * write itself. It says so in English instead of inventing a list.
+ * pitches (its `Custom` included), and the picker above it is the engine's own
+ * ordered catalog of preset names (`presets(instrument)`) — never a list the
+ * client wrote. An instrument the engine names no presets for (the keyboard)
+ * says so plainly, and a refused list is shown as a refusal.
  */
 @Composable
 fun TuningSheet(
     draft: TuningDraft,
     stringCount: Int,
+    presets: PresetPickerState,
+    onSelectPreset: (String) -> Unit,
     onChangeString: (Int, String) -> Unit,
     onApply: () -> Unit,
     onCancel: () -> Unit,
@@ -87,14 +89,12 @@ fun TuningSheet(
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.testTag("tuning-preset"),
                 )
-                Text(
-                    text = "This engine build does not list the instrument's preset names " +
-                        "yet, so no preset picker is shown: the preset above is the engine's " +
-                        "own label for these exact pitches. Choose a note per string and the " +
-                        "engine resolves it against this tuning's reference.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.testTag("tuning-preset-note"),
+
+                PresetPicker(
+                    state = presets,
+                    selected = draft.preset,
+                    enabled = enabled,
+                    onSelect = onSelectPreset,
                 )
 
                 tuningRows(stringCount).forEach { row ->
@@ -188,4 +188,70 @@ private fun StringNoteRow(
             )
         }
     }
+}
+
+/**
+ * The preset picker: the engine's own ordered names, or its own "none", or its
+ * own refusal.
+ *
+ * It renders the names exactly as the engine sent them — same order, nothing
+ * filtered — and the chip whose name equals the engine's detected label of the
+ * draft is the selected one. Picking a name sends it back to the engine, which
+ * answers the whole draft; the sheet never assumes the selection took.
+ */
+@Composable
+private fun PresetPicker(
+    state: PresetPickerState,
+    selected: String,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    when (state) {
+        is PresetPickerState.Ready -> {
+            ControlCaptionFor(presets = state.names)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 2.dp)
+                    .testTag("tuning-preset-picker"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                state.names.forEach { name ->
+                    PillChip(
+                        text = name,
+                        selected = name == selected,
+                        enabled = enabled,
+                        onClick = { onSelect(name) },
+                        modifier = Modifier.testTag("tuning-preset-option-$name"),
+                    )
+                }
+            }
+        }
+
+        PresetPickerState.NotApplicable -> Text(
+            text = "The engine lists no presets for this instrument: the keyboard has no tuning.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.testTag("tuning-preset-not-applicable"),
+        )
+
+        is PresetPickerState.Refused -> Text(
+            text = "The engine refused the preset list: ${state.reason}",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.testTag("tuning-preset-refused"),
+        )
+    }
+}
+
+/** A caption naming the count of the engine's own names. */
+@Composable
+private fun ControlCaptionFor(presets: List<String>) {
+    Text(
+        text = "${presets.size} presets from the engine",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+    )
 }

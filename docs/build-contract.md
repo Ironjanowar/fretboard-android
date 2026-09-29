@@ -195,3 +195,79 @@ arm64 native library does not load.
   device-side tests the plan lists for P3 and none of them ran.
 * Shrinking is still off; no persistence, no URL import and no key/progression
   sheets.
+
+## Evidence of the P4 build (piano keyboard and instrument boundary)
+
+```sh
+$ python3 scripts/prepare_core.py --offline
+verified engine/maven/dev/ironjanowar/fretboard-engine/0.4.0/fretboard-engine-0.4.0.aar
+$ ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+BUILD SUCCESSFUL in 15s
+$ apksigner verify --print-certs fretboard-0.4.0-arm64-release.apk
+Signer #1 certificate SHA-256 digest: 98785d6b9bf00f1440506facec750b034f1caa411c72fdb96fca38af8693a949
+$ aapt2 dump badging fretboard-0.4.0-arm64-release.apk
+package: name='dev.ironjanowar.fretboard' versionCode='4' versionName='0.4.0' compileSdkVersion='37'
+minSdkVersion:'29'  targetSdkVersion:'37'  native-code: 'arm64-v8a'
+uses-permission: name='dev.ironjanowar.fretboard.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+$ sha256sum fretboard-0.4.0-arm64-release.apk
+b85b1a85a625abd00d14aec938d9622bbe37b1baf7cf45fe80cfba999dd9f10c
+```
+
+Unit tests: 109 run, 0 failures — P4 adds 32: `PianoGeometryTest` (15, the
+keyboard layout and its one hit grid), `PianoTransitionsTest` (12, the tap
+routing, the engine's committed keys and the instrument boundary) and
+`PresetPickerTest` (5, the engine's ordered preset names, the keyboard's empty
+catalog and a refusal), on top of P3's 77.
+
+### What the P4 screens do
+
+* **A12 — the keyboard.** On the piano the app draws the engine's
+  `keyboardSurface(state)` instead of a fretboard: one half-open hit grid shared
+  by the drawing, the pointer input and the accessibility bounds. The keys are
+  the engine's own keys in the engine's own order, the notes are the engine's,
+  the marks are the engine's `memberships`/`fill`, and a tap routes exactly one
+  `TogglePianoKey` carrying the tapped key's own pitch. Everything scrolls
+  sideways; the black keys are uniformly scaled to a 48dp minimum width.
+* **A13 — the instrument boundary and the preset picker.** Switching instrument
+  sends one `SetInstrument` and returns exactly the page the engine answered —
+  the client assembles no page and carries no selection across the
+  fretted/piano boundary. The active instrument is the picker's selected chip
+  and the header caption. The tuning sheet's preset picker now reads the
+  engine's `presets(instrument)`: the frozen names in the frozen order, an empty
+  catalog (the keyboard) shown as *not applicable*, and a refusal shown as a
+  refusal. The keyboard's missing tuning is likewise shown as not applicable
+  rather than as a control that could not work.
+
+### What Kotlin is allowed to decide, and is therefore what the tests pin
+
+The keyboard's **layout**: which keys are drawn white or black, where each key
+sits and how big it is, the half-open ownership of the hit grid, black-over-white
+priority, and the spoken label. The **preset picker's wrap**, and the **switch
+event** (one `SetInstrument`, nothing else).
+
+The black/white classification is read from the engine's own note spelling — the
+domain's `note.rs` produces sharp-only names — and never from pitch arithmetic,
+so Kotlin performs no note math anywhere. The pinned web proportions are scaled
+by an exact factor of `2.4` (black 20 → 48dp), and the web's own black offsets
+(`0.62/0.81/0.58/0.71/0.86`) are pinned literally by the tests.
+
+### Honest limits of this build
+
+* The design asks the engine for keyboard key metadata (its contract's
+  `KeyboardKey` names a white/black kind, a lower-white anchor and an
+  octave-qualified label). The pinned 0.4.0 `KeyboardKeyDto` carries the pitch,
+  the note, the memberships and the fill and **nothing else**, so the physical
+  layout (key colour, position) is a client constant — the same class of
+  constant as the fretboard's inlay frets — and the accessible label names the
+  engine's note with the engine's own pitch number (`Key C#, pitch 49`) rather
+  than computing an octave. This is a boundary note for the core, not a musical
+  answer computed here.
+* The app was never run: no emulator (`/dev/kvm` absent) and no device, exactly
+  as in P1–P3. The reducer's own rules (a piano tap adds or removes, an
+  out-of-range pitch is refused, crossing the boundary clears the selection and
+  keeps the chords and the tab) live in the engine and run in its own test suite
+  and on the user's device; they cannot run on this host, where the arm64 native
+  library does not load. The plan's P4 instrumented tests (`PianoVisualizerTest`,
+  `PianoAnalyzerTouchTest`, `InstrumentBoundaryTest`) did not run.
+* Shrinking is still off; no key/progression sheets, no persistence and no URL
+  import.

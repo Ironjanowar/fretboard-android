@@ -6,8 +6,8 @@ import dev.ironjanowar.fretboard.core.ChordDetailsDto
 import dev.ironjanowar.fretboard.core.FrettedSurfaceDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
 import dev.ironjanowar.fretboard.core.InstrumentDto
-import dev.ironjanowar.fretboard.core.InstrumentKindDto
 import dev.ironjanowar.fretboard.core.InstrumentStateDto
+import dev.ironjanowar.fretboard.core.KeyboardSurfaceDto
 import dev.ironjanowar.fretboard.core.PageEventDto
 import dev.ironjanowar.fretboard.core.PageStateDto
 import dev.ironjanowar.fretboard.core.QualityGroupDto
@@ -19,20 +19,11 @@ import dev.ironjanowar.fretboard.core.chordDetails
 import dev.ironjanowar.fretboard.core.defaultState
 import dev.ironjanowar.fretboard.core.frettedSurface
 import dev.ironjanowar.fretboard.core.instruments
+import dev.ironjanowar.fretboard.core.keyboardSurface
+import dev.ironjanowar.fretboard.core.presets
 import dev.ironjanowar.fretboard.core.qualityGroups
-import dev.ironjanowar.fretboard.core.validateState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-/**
- * The catalog token every fretted instrument's default preset carries.
- *
- * `defaultState()` answers it for the guitar and the engine refuses a state
- * whose tuning reference is not one of its own presets, so this constant is the
- * one catalog string the client needs to switch instrument. Every value the
- * client sends is validated by the engine before it is shown.
- */
-const val STANDARD_REFERENCE: String = "Standard"
 
 /** The English sentence shown when a draft no longer belongs to the page. */
 const val STALE_DRAFT_MESSAGE: String =
@@ -61,8 +52,8 @@ sealed interface SessionAnalysis {
 /**
  * Everything the screen needs to draw one committed session.
  *
- * Nothing here is computed by Kotlin: `state`, `details`, `slots`, `surface` and
- * `analysis` are the engine's own answers.
+ * Nothing here is computed by Kotlin: `state`, `details`, `slots`, `surface`,
+ * `keyboard` and `analysis` are the engine's own answers.
  */
 data class SessionView(
     val state: PageStateDto,
@@ -70,8 +61,10 @@ data class SessionView(
     val qualityGroups: List<QualityGroupDto>,
     val details: List<ChordDetailsDto>,
     val slots: List<ULong>,
-    /** The fretted surface, or `null` for the keyboard (its surface is P4). */
+    /** The fretted surface, or `null` for the keyboard. */
     val surface: FrettedSurfaceDto?,
+    /** The keyboard surface, or `null` for a fretted instrument. */
+    val keyboard: KeyboardSurfaceDto?,
     /** The engine's analysis of the committed selection, or why there is none. */
     val analysis: SessionAnalysis,
 )
@@ -133,6 +126,10 @@ private fun derive(
         is InstrumentStateDto.Fretted -> frettedSurface(state)
         is InstrumentStateDto.Piano -> null
     },
+    keyboard = when (state.instrument) {
+        is InstrumentStateDto.Fretted -> null
+        is InstrumentStateDto.Piano -> keyboardSurface(state)
+    },
     analysis = analyzeQuietly(state),
 )
 
@@ -182,44 +179,95 @@ suspend fun applyEvent(view: SessionView, event: PageEventDto): SessionLoad =
     }
 
 /**
+ * The page reducer, as the session uses it.
+ *
+ * Every committed transition is the engine's: the client hands it the state it
+ * holds and the event, and takes the page it answers with. This exists as a port
+ * only so the boundary between the kinds can be pinned on the JVM, where the
+ * arm64 native library cannot be loaded; the production implementation is
+ * [BindingPageEngine] and decides nothing.
+ */
+interface PageEngine {
+    fun apply(state: PageStateDto, event: PageEventDto): PageStateDto
+}
+
+/** The production port: the pinned binding, called as it is. */
+object BindingPageEngine : PageEngine {
+    override fun apply(state: PageStateDto, event: PageEventDto): PageStateDto =
+        applyPageEvent(state, event)
+}
+
+/**
+ * The event that switches to [target], or `null` when it is already active.
+ *
+ * A selection of the current instrument is a no-op and sends nothing, so it can
+ * never produce a spurious revision. Otherwise the one event is the engine's
+ * `SetInstrument`; the client assembles no page and carries no value across the
+ * boundary.
+ */
+fun instrumentSwitchEvent(current: InstrumentDto, target: InstrumentDto): PageEventDto? =
+    if (current == target) null else PageEventDto.SetInstrument(target)
+
+/**
+ * Switch the committed page to [target] through the engine, or return it
+ * untouched when the target is already active.
+ *
+ * Crossing the fretted/piano boundary is the engine's own rule: it clears the
+ * selection entirely (a string position is never a key and a key is never a
+ * string position), keeps the chords and the tab, clears the highlight and
+ * resets the target's tuning. The client sends one `SetInstrument` event and
+ * returns exactly the page the engine answered — never a page it assembled
+ * itself, and never the old selection converted.
+ */
+fun switchInstrument(
+    state: PageStateDto,
+    current: InstrumentDto,
+    target: InstrumentDto,
+    engine: PageEngine,
+): PageStateDto {
+    val event = instrumentSwitchEvent(current, target) ?: return state
+    return engine.apply(state, event)
+}
+
+/**
  * Switch to another catalog instrument.
  *
- * The switch is the engine's own `SetInstrument` event: it resets the target's
- * Standard tuning, keeps only the marks whose string still exists, keeps the
- * chords and the tab and clears the highlight. The client asks and reads the
- * answer; it never assembles the target state itself.
+ * The switch is the engine's own `SetInstrument` event, for a fretted instrument
+ * and for the keyboard alike: it resets the target's Standard tuning, keeps only
+ * the marks whose string still exists, keeps the chords and the tab and clears
+ * the highlight. The client asks and reads the answer; it never assembles the
+ * target state itself.
  *
- * One boundary is honest to name: the pinned reducer's `SetInstrument` has no
- * keyboard target yet (its `Standard` preset lookup fails for the piano), so a
- * switch to the keyboard still goes through the client-assembled candidate page
- * and `validateState`, which is what the P2 build shipped. The fretted targets
- * never take that path.
- *
- * Selecting the current instrument is a no-op: the state comes back untouched.
+ * Selecting the current instrument is a no-op: no event is sent and the state
+ * comes back untouched.
  */
 suspend fun selectInstrument(
     view: SessionView,
     target: InstrumentDefinitionDto,
+    engine: PageEngine = BindingPageEngine,
 ): SessionLoad = withContext(Dispatchers.Default) {
     try {
-        if (target.instrument == view.state.instrumentId()) {
-            SessionLoad.Ready(view)
-        } else {
-            val switched = applyPageEvent(
-                view.state,
-                PageEventDto.SetInstrument(target.instrument),
-            )
-            val next = if (switched.instrumentId() == target.instrument) {
-                switched
-            } else {
-                validateState(stateWithInstrument(view.state, target))
-            }
-            SessionLoad.Ready(derive(next, view.instruments, view.qualityGroups))
-        }
+        val switched = switchInstrument(
+            state = view.state,
+            current = view.state.instrumentId(),
+            target = target.instrument,
+            engine = engine,
+        )
+        SessionLoad.Ready(derive(switched, view.instruments, view.qualityGroups))
     } catch (error: Throwable) {
         SessionLoad.Failed(engineFailure(error))
     }
 }
+
+/**
+ * The engine's ordered preset names for [instrument], off the main thread.
+ *
+ * This is the enumeration the tuning sheet's picker reads: the frozen catalog's
+ * own names in the frozen order, and an empty list for the keyboard, which has
+ * no tuning. The client carries no list of its own.
+ */
+suspend fun instrumentPresets(instrument: InstrumentDto): List<String> =
+    withContext(Dispatchers.Default) { presets(instrument) }
 
 /**
  * Open the tuning draft of the committed page, off the main thread.
@@ -265,37 +313,9 @@ fun PageStateDto.instrumentId(): InstrumentDto = when (val current = instrument)
     is InstrumentStateDto.Piano -> InstrumentDto.PIANO
 }
 
-/** The candidate state for switching to [target], when the engine's event cannot. */
-private fun stateWithInstrument(
-    state: PageStateDto,
-    target: InstrumentDefinitionDto,
-): PageStateDto {
-    val instrument = when (target.kind) {
-        InstrumentKindDto.FRETTED -> InstrumentStateDto.Fretted(
-            instrument = target.instrument,
-            tuning = TuningDto(
-                reference = STANDARD_REFERENCE,
-                pitches = target.standardPitches,
-            ),
-            // Only positions the target actually has survive the switch; the
-            // engine rejects the rest, so they are dropped, not reinterpreted.
-            selected = when (val current = state.instrument) {
-                is InstrumentStateDto.Fretted ->
-                    current.selected.filter { position ->
-                        position.string.toInt() < target.strings.toInt()
-                    }
-                is InstrumentStateDto.Piano -> emptyList()
-            },
-        )
-        InstrumentKindDto.KEYBOARD -> InstrumentStateDto.Piano(selected = byteArrayOf())
-    }
-    return state.copy(instrument = instrument, highlight = null)
-}
-
 /**
  * The last fret of the current fretted instrument, from the engine's own
- * catalog definition — never a hardcoded 24. `null` for the keyboard, whose
- * surface is a later phase.
+ * catalog definition — never a hardcoded 24. `null` for the keyboard.
  */
 fun SessionView.lastFret(): Int? {
     val fretted = state.instrument as? InstrumentStateDto.Fretted ?: return null
@@ -313,6 +333,19 @@ fun SessionView.instrumentDefinition(): InstrumentDefinitionDto? {
 fun SessionView.markedFrets(): Map<Int, Int> {
     val fretted = state.instrument as? InstrumentStateDto.Fretted ?: return emptyMap()
     return fretted.selected.associate { position -> position.string.toInt() to position.fret.toInt() }
+}
+
+/**
+ * The committed keys of a keyboard page, by absolute pitch.
+ *
+ * The engine holds the piano's canonical selection as the exact pitches it was
+ * given, unique and ascending; the client reads it and never derives it from
+ * anything else. The bytes are the generated binding's signed view of the Rust
+ * `Vec<u8>`, so every one is read unsigned.
+ */
+fun SessionView.markedPitches(): Set<Int> {
+    val piano = state.instrument as? InstrumentStateDto.Piano ?: return emptySet()
+    return piano.selected.map { byte -> byte.toInt() and 0xFF }.toSet()
 }
 
 /** The committed tuning of a fretted page, or `null` on the keyboard. */

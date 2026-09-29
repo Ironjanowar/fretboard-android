@@ -47,14 +47,19 @@ import dev.ironjanowar.fretboard.session.applyEvent
 import dev.ironjanowar.fretboard.session.applyTuningDraft
 import dev.ironjanowar.fretboard.session.changeTuningString
 import dev.ironjanowar.fretboard.session.engineFailure
+import dev.ironjanowar.fretboard.session.instrumentPresets
 import dev.ironjanowar.fretboard.session.lastFret
 import dev.ironjanowar.fretboard.session.openTuningDraft
 import dev.ironjanowar.fretboard.session.selectInstrument
+import dev.ironjanowar.fretboard.session.selectTuningPreset
 import dev.ironjanowar.fretboard.session.startSession
 import dev.ironjanowar.fretboard.ui.analyzer.AnalyzerScreen
 import dev.ironjanowar.fretboard.ui.common.PillChip
 import dev.ironjanowar.fretboard.ui.controls.InstrumentPicker
+import dev.ironjanowar.fretboard.ui.tuning.PresetPickerState
 import dev.ironjanowar.fretboard.ui.tuning.TuningSheet
+import dev.ironjanowar.fretboard.ui.tuning.presetPicker
+import dev.ironjanowar.fretboard.ui.tuning.presetPickerRefusal
 import dev.ironjanowar.fretboard.ui.visualizer.VisualizerScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -118,6 +123,9 @@ private fun FretboardScreen() {
     // The tuning sheet is open exactly while a draft exists; the draft itself is
     // the engine's value plus the engine's own reading of it.
     var draft by remember { mutableStateOf<TuningDraft?>(null) }
+    // The preset picker's content: the engine's own ordered names for the
+    // instrument the draft belongs to, its own "none", or its own refusal.
+    var presets by remember { mutableStateOf<PresetPickerState>(PresetPickerState.NotApplicable) }
     var root by remember { mutableStateOf("C") }
     var quality by remember { mutableStateOf("major") }
     val scope = rememberCoroutineScope()
@@ -144,6 +152,36 @@ private fun FretboardScreen() {
                 val answer = withContext(Dispatchers.Default) { block() }
                 error = null
                 onReady(answer)
+            } catch (failure: Throwable) {
+                error = engineFailure(failure)
+            }
+            busy = false
+        }
+    }
+
+    /**
+     * Open the tuning draft together with the engine's own preset list.
+     *
+     * Both come from the engine: the draft from `openTuningDraft`, the picker's
+     * names from `presets(instrument)`. The list is the engine's ordered catalog
+     * and never a client table, and a refused list is shown as a refusal rather
+     * than as an empty picker.
+     */
+    fun openTuning() {
+        val page = view ?: return
+        val instrument = page.instrumentId()
+        busy = true
+        scope.launch {
+            try {
+                val opened = withContext(Dispatchers.Default) { openTuningDraft(page) }
+                val names = try {
+                    presetPicker(withContext(Dispatchers.Default) { instrumentPresets(instrument) })
+                } catch (failure: Throwable) {
+                    presetPickerRefusal(failure)
+                }
+                error = null
+                presets = names
+                draft = opened
             } catch (failure: Throwable) {
                 error = engineFailure(failure)
             }
@@ -191,6 +229,7 @@ private fun FretboardScreen() {
                 // A change of instrument invalidates an open draft: it was opened
                 // for the instrument that was current then.
                 draft = null
+                presets = PresetPickerState.NotApplicable
                 run { selectInstrument(current, definition) }
             },
         )
@@ -213,18 +252,29 @@ private fun FretboardScreen() {
             }
             Spacer(Modifier.weight(1f))
             // No ghost tuning control on the keyboard: the engine has no tuning
-            // for it and its modal does not exist.
+            // for it and its modal does not exist, so the control is not drawn at
+            // all — the note below says why instead.
             if (current.instrumentId() != InstrumentDto.PIANO) {
                 TextButton(
-                    onClick = {
-                        withEngine({ openTuningDraft(current) }) { opened -> draft = opened }
-                    },
+                    onClick = { openTuning() },
                     enabled = !busy,
                     modifier = Modifier.testTag("open-tuning"),
                 ) {
                     Text("Tuning")
                 }
             }
+        }
+
+        // The keyboard has no tuning: said as not applicable, never as a control
+        // that could not work.
+        if (current.instrumentId() == InstrumentDto.PIANO) {
+            NotApplicable(
+                title = "Tuning is not applicable to the keyboard",
+                detail =
+                    "The engine carries no tuning for the piano, so there is nothing to " +
+                        "edit. Switch to a fretted instrument for the tuning sheet.",
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
 
         when (current.state.tab) {
@@ -252,6 +302,9 @@ private fun FretboardScreen() {
                 onTapPosition = { position: PositionDto ->
                     run { applyEvent(current, PageEventDto.ToggleNote(position)) }
                 },
+                onTapPitch = { pitch: Int ->
+                    run { applyEvent(current, PageEventDto.TogglePianoKey(pitch.toUByte())) }
+                },
                 onClearSelection = { run { applyEvent(current, PageEventDto.ClearSelection) } },
                 enabled = !busy,
             )
@@ -263,6 +316,12 @@ private fun FretboardScreen() {
         TuningSheet(
             draft = open,
             stringCount = currentStringCount(view, open.instrument),
+            presets = presets,
+            onSelectPreset = { name ->
+                // The engine answers the whole draft for the chosen name; the
+                // client takes its answer and never assumes the choice applied.
+                withEngine({ selectTuningPreset(open, name) }) { edited -> draft = edited }
+            },
             onChangeString = { stringIndex, note ->
                 withEngine({ changeTuningString(open, stringIndex, note) }) { edited ->
                     draft = edited
