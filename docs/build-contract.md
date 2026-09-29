@@ -271,3 +271,151 @@ by an exact factor of `2.4` (black 20 → 48dp), and the web's own black offsets
   `PianoAnalyzerTouchTest`, `InstrumentBoundaryTest`) did not run.
 * Shrinking is still off; no key/progression sheets, no persistence and no URL
   import.
+
+## Evidence of the 0.4.1 build (the rotation fix)
+
+The user reported that turning the phone to landscape and back to portrait lost
+the whole session — *es como si se perdieran todos los filtros*.
+
+```sh
+$ python3 scripts/prepare_core.py --offline
+verified engine/maven/dev/ironjanowar/fretboard-engine/0.4.0/fretboard-engine-0.4.0.aar
+$ ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+BUILD SUCCESSFUL in 22s
+$ ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
+BUILD SUCCESSFUL
+$ apksigner verify --print-certs fretboard-0.4.1-arm64-release.apk
+Verifies, v2 scheme, 1 signer
+Signer #1 certificate SHA-256 digest: 98785d6b9bf00f1440506facec750b034f1caa411c72fdb96fca38af8693a949
+$ aapt2 dump badging fretboard-0.4.1-arm64-release.apk
+package: name='dev.ironjanowar.fretboard' versionCode='5' versionName='0.4.1' compileSdkVersion='37'
+minSdkVersion:'29'  targetSdkVersion:'37'  native-code: 'arm64-v8a'
+$ sha256sum fretboard-0.4.1-arm64-release.apk
+f1af03db8c6f65373e6db43324ebe3f01fa2b7226cbe2184073d2d457821380d   # 24 314 696 bytes
+```
+
+As in P2 and P3, byte-for-byte reproducibility is not claimed: a rebuild of the
+same source produces a different archive (timestamps and signature), so the
+digest identifies the delivered file, not the source revision.
+
+The 0.4.1 APK carries `lib/arm64-v8a/libfretboard_mobile_ffi.so`, its JNA
+runtime and the same release certificate as 0.4.0, so it installs over a 0.4.0
+installation as an update. The engine artifact stays pinned at 0.4.0; only the
+application's own `versionCode`/`versionName` moved.
+
+### The bug, exactly
+
+`AndroidManifest.xml` declares no `android:configChanges`, so a rotation destroys
+and recreates `MainActivity`. `MainActivity.onCreate` called `setContent {
+FretboardApp() }` and there was no `ViewModel` anywhere: `ui/FretboardApp.kt`
+kept the whole session in plain composition memory (`view`, `error`, `busy`,
+`draft`, `presets`, `root`, `quality`), so a configuration change re-ran the
+composition with every `remember` back at its initial value.
+
+### What the fix pins
+
+* **Where the state lives.** `ui/SessionState.kt` holds `SessionState` and
+  `SessionStateHolder`, free of Android and Compose, and
+  `FretboardViewModel` owns one; the activity's retained `ViewModelStore` keeps
+  it across the recreation, and `MainActivity` passes it into
+  `FretboardApp(fretboard)` as a required parameter. The screen keeps no session
+  state of its own — every value it draws is read from the holder.
+* **One engine round trip per transition.** `start()` is idempotent while a
+  session is loaded, because the composition calls it again after every
+  rotation: re-asking would replace the user's session with a fresh one, which is
+  the same bug wearing a different hat.
+* **Engine only.** `session/SessionEngine.kt` is the port the holder asks through;
+  its production implementation `BindingSessionEngine` is the session
+  coordinator's own calls and nothing else. No musical value is computed in
+  Kotlin, and no second music path was added.
+* **The draft is separate from the committed page.** An open draft, its edits and
+  the engine's preset list live in the holder beside the committed page; a
+  rotation changes neither the edits nor the page.
+* **The scroll position.** Compose's `rememberScrollState` is backed by
+  `rememberSaveable`, so the board's own scroll survives the recreation through
+  the saved instance state. This was confirmed by reading the pinned
+  `androidx.compose.foundation` source rather than assumed — in
+  `foundation-android-1.12.1`, `Scroll.kt`:
+
+  ```kotlin
+  @Composable
+  fun rememberScrollState(initial: Int = 0): ScrollState {
+      return rememberSaveable(saver = ScrollState.Saver) { ScrollState(initial = initial) }
+  }
+  ```
+
+  which is why no scroll offset was moved into the holder.
+* **No `android:configChanges`.** The activity is still recreated, so resources
+  are re-resolved as the platform intends; the fix is where the state lives, not
+  a suppression of the recreation.
+
+Unit tests: 124 run, 0 failures — 109 before, plus P5's 15 in
+`SessionStateHolderTest` (the engine asked once and the session read back, the
+marks/chords/highlight/tab held, the piano's keys, a draft surviving with its
+edits, an edit never touching the committed page, an apply and a refusal, a stale
+draft dropped, the pickers coming back, the quality default, and a refused action
+keeping the session). Per class: `SessionStateHolderTest` 15, `PianoGeometryTest`
+15, `AnalysisModelTest` 15, `PianoTransitionsTest` 12, `TuningDraftTest` 12,
+`SurfaceInputTest` 10, `PaletteTest` 9, `FrettedAnalyzerTest` 8,
+`FretboardGeometryTest` 8, `CardModelTest` 7, `PresetPickerTest` 5,
+`TuningTextTest` 4, `ClaimedPositionsTest` 4.
+
+### The regression test, and what it proves
+
+`SessionStateHolderTest` is the strongest JVM-level regression available, and it
+was run against the unfixed code to prove it: with the production changes stashed
+(`git stash push -u -- app/src/main/java/dev/ironjanowar/fretboard/`) and only the
+new test left in place,
+
+```
+> Task :app:compileDebugUnitTestKotlin FAILED
+e: .../SessionStateHolderTest.kt:16:42 Unresolved reference 'SessionEngine'.
+e: .../SessionStateHolderTest.kt:123:36 Unresolved reference 'SessionEngine'.
+e: .../SessionStateHolderTest.kt:198:9 Unresolved reference 'SessionStateHolder'.
+BUILD FAILED in 8s
+```
+
+and with the same unfixed tree and the new test moved aside, the baseline was
+green: **109 tests, 0 failures**.
+
+That failure is a *compile* failure: the fix introduces the seam the test needs
+(`SessionStateHolder`, `SessionEngine`), and before the fix there was no JVM-level
+way to reach the session at all — it lived inside a private composable. So it pins
+the holder's contract and the two rules the fix depends on (the session is held by
+an object outside the composition, and a later screen reads it back instead of
+asking the engine again); it does **not** rotate anything. A real rotation needs a
+device, which is what the instrumented test is for. This is stated plainly rather
+than dressed up: no JVM test here would have failed against the old code for a
+behavioural reason.
+
+### Honest limits of this build
+
+* **The instrumented rotation test did not run.**
+  `app/src/androidTest/.../RotationStateTest.kt` recreates the activity through
+  `ActivityScenario.recreate()` with a session built through the engine (an
+  instrument switch there and back, a stored chord, a marked position, a marked
+  piano key, an open tuning draft with an unapplied edit) and asserts every part
+  of it afterwards. There is no emulator here (`/dev/kvm` absent) and no device,
+  so the arm64 engine cannot be loaded: the suite **compiles**
+  (`:app:compileDebugAndroidTestKotlin`) and was **not run**. It must be run where
+  a device exists — as must the P3/P4 device tests (`TuningSheetTest`,
+  `FrettedTouchTest`, `AnalysisCardsTest`, `PianoVisualizerTest`,
+  `PianoAnalyzerTouchTest`, `InstrumentBoundaryTest`).
+* **The physical rotation is the user's manual check.** No test here turns a
+  phone. The manual list: rotate to landscape, rotate back, and confirm the
+  instrument, tuning, tab, marks, chords, highlight, pickers and an open draft
+  with edits are all still there.
+* **The device suite needed dependencies.** `app/src/androidTest` is a new source
+  set, so it needs `androidx.test:core`, `androidx.test.ext:junit`,
+  `androidx.test:runner` and `androidx.compose.ui.test:ui-test-junit4` (versions
+  in `gradle/libs.versions.toml`) plus `testInstrumentationRunner`. They are
+  `androidTestImplementation`-only and cannot reach the APK. No production
+  dependency was added: `ViewModel`, `viewModels()` and `viewModelScope` all
+  arrive transitively through `androidx.activity`.
+* `createAndroidComposeRule` is used from `androidx.compose.ui.test.junit4` and
+  the compiler warns it is deprecated in favour of the `...junit4.v2` rule, which
+  queues compositions on a `StandardTestDispatcher`. That migration changes
+  execution timing, so it belongs with the first device run of this suite, not
+  with a compile-only change here.
+* Shrinking is still off, and there is still no persistence and no URL import: a
+  rotation is survived, a process death is not.

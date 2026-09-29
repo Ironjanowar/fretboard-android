@@ -22,11 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,36 +29,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.ironjanowar.fretboard.FretboardViewModel
 import dev.ironjanowar.fretboard.core.ChordDto
 import dev.ironjanowar.fretboard.core.InstrumentDto
 import dev.ironjanowar.fretboard.core.InstrumentStateDto
 import dev.ironjanowar.fretboard.core.PageEventDto
 import dev.ironjanowar.fretboard.core.PositionDto
 import dev.ironjanowar.fretboard.core.TabDto
-import dev.ironjanowar.fretboard.session.SessionLoad
 import dev.ironjanowar.fretboard.session.SessionView
-import dev.ironjanowar.fretboard.session.TuningDraft
-import dev.ironjanowar.fretboard.session.applyEvent
-import dev.ironjanowar.fretboard.session.applyTuningDraft
-import dev.ironjanowar.fretboard.session.changeTuningString
-import dev.ironjanowar.fretboard.session.engineFailure
-import dev.ironjanowar.fretboard.session.instrumentPresets
 import dev.ironjanowar.fretboard.session.lastFret
-import dev.ironjanowar.fretboard.session.openTuningDraft
-import dev.ironjanowar.fretboard.session.selectInstrument
-import dev.ironjanowar.fretboard.session.selectTuningPreset
-import dev.ironjanowar.fretboard.session.startSession
 import dev.ironjanowar.fretboard.ui.analyzer.AnalyzerScreen
 import dev.ironjanowar.fretboard.ui.common.PillChip
 import dev.ironjanowar.fretboard.ui.controls.InstrumentPicker
-import dev.ironjanowar.fretboard.ui.tuning.PresetPickerState
 import dev.ironjanowar.fretboard.ui.tuning.TuningSheet
-import dev.ironjanowar.fretboard.ui.tuning.presetPicker
-import dev.ironjanowar.fretboard.ui.tuning.presetPickerRefusal
 import dev.ironjanowar.fretboard.ui.visualizer.VisualizerScreen
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** The application's dark theme: the frozen chord palette over a near-black UI. */
 private val FretboardTheme = darkColorScheme(
@@ -99,109 +78,38 @@ private val TAB_TITLES: List<Pair<TabDto, String>> = listOf(
     TabDto.ANALYZER to "Analyzer",
 )
 
-/** The whole screen: the engine's catalogs, the controls and the two tabs. */
+/**
+ * The whole screen, drawn from the session the [fretboard] holds.
+ *
+ * The screen takes the session owner as a parameter and keeps no session state
+ * of its own: everything it draws is read from the holder, and every control
+ * sends that holder an intention. That is what makes a rotation cheap — the
+ * composition comes back and finds the session where the last one left it,
+ * rather than starting from `null`.
+ */
 @Composable
-fun FretboardApp() {
+fun FretboardApp(fretboard: FretboardViewModel) {
     MaterialTheme(colorScheme = FretboardTheme) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            FretboardScreen()
+            FretboardScreen(fretboard)
         }
     }
 }
 
 @Composable
-private fun FretboardScreen() {
-    // The last valid session is kept while an action fails, so a rejected action
-    // never wipes what the user already has on screen: the error is shown beside
-    // the state, as the design's transition table requires.
-    var view by remember { mutableStateOf<SessionView?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(true) }
-    // The tuning sheet is open exactly while a draft exists; the draft itself is
-    // the engine's value plus the engine's own reading of it.
-    var draft by remember { mutableStateOf<TuningDraft?>(null) }
-    // The preset picker's content: the engine's own ordered names for the
-    // instrument the draft belongs to, its own "none", or its own refusal.
-    var presets by remember { mutableStateOf<PresetPickerState>(PresetPickerState.NotApplicable) }
-    var root by remember { mutableStateOf("C") }
-    var quality by remember { mutableStateOf("major") }
-    val scope = rememberCoroutineScope()
+private fun FretboardScreen(fretboard: FretboardViewModel) {
+    // The session is the holder's, never the composition's. Nothing below is a
+    // `remember`: a configuration change re-runs this function and reads the
+    // same value back.
+    val session = fretboard.state
+    val view = session.view
 
-    fun run(block: suspend () -> SessionLoad) {
-        busy = true
-        scope.launch {
-            when (val result = block()) {
-                is SessionLoad.Ready -> {
-                    view = result.view
-                    error = null
-                }
-                is SessionLoad.Failed -> error = result.reason
-            }
-            busy = false
-        }
-    }
-
-    /** One engine call whose answer is not a whole session, on the worker thread. */
-    fun <T> withEngine(block: suspend () -> T, onReady: (T) -> Unit) {
-        busy = true
-        scope.launch {
-            try {
-                val answer = withContext(Dispatchers.Default) { block() }
-                error = null
-                onReady(answer)
-            } catch (failure: Throwable) {
-                error = engineFailure(failure)
-            }
-            busy = false
-        }
-    }
-
-    /**
-     * Open the tuning draft together with the engine's own preset list.
-     *
-     * Both come from the engine: the draft from `openTuningDraft`, the picker's
-     * names from `presets(instrument)`. The list is the engine's ordered catalog
-     * and never a client table, and a refused list is shown as a refusal rather
-     * than as an empty picker.
-     */
-    fun openTuning() {
-        val page = view ?: return
-        val instrument = page.instrumentId()
-        busy = true
-        scope.launch {
-            try {
-                val opened = withContext(Dispatchers.Default) { openTuningDraft(page) }
-                val names = try {
-                    presetPicker(withContext(Dispatchers.Default) { instrumentPresets(instrument) })
-                } catch (failure: Throwable) {
-                    presetPickerRefusal(failure)
-                }
-                error = null
-                presets = names
-                draft = opened
-            } catch (failure: Throwable) {
-                error = engineFailure(failure)
-            }
-            busy = false
-        }
-    }
-
-    LaunchedEffect(Unit) { run { startSession() } }
-
-    // The default quality must exist in the engine's own catalog: if the engine
-    // starts grouping differently, the first quality it sends is used instead of
-    // a client guess.
-    val loaded = view
-    LaunchedEffect(loaded?.qualityGroups) {
-        val groups = loaded?.qualityGroups ?: return@LaunchedEffect
-        val known = groups.flatMap { group -> group.qualities.map { it.quality } }
-        if (quality !in known) {
-            known.firstOrNull()?.let { quality = it }
-        }
-    }
+    // Idempotent on purpose: this runs again after every rotation, and a session
+    // that is already held must come back rather than be asked for again.
+    LaunchedEffect(Unit) { fretboard.start() }
 
     Column(
         modifier = Modifier
@@ -210,9 +118,13 @@ private fun FretboardScreen() {
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Header(view, busy)
-        error?.let { message ->
-            ErrorBanner(message = message, onRetry = { run { startSession() } }, enabled = !busy)
+        Header(view, session.busy)
+        session.error?.let { message ->
+            ErrorBanner(
+                message = message,
+                onRetry = { fretboard.reload() },
+                enabled = !session.busy,
+            )
         }
 
         val current = view
@@ -224,14 +136,8 @@ private fun FretboardScreen() {
         InstrumentPicker(
             instruments = current.instruments,
             selected = current.instrumentId(),
-            enabled = !busy,
-            onSelect = { definition ->
-                // A change of instrument invalidates an open draft: it was opened
-                // for the instrument that was current then.
-                draft = null
-                presets = PresetPickerState.NotApplicable
-                run { selectInstrument(current, definition) }
-            },
+            enabled = !session.busy,
+            onSelect = { definition -> fretboard.selectInstrument(definition) },
         )
 
         Row(
@@ -245,8 +151,10 @@ private fun FretboardScreen() {
                 PillChip(
                     text = title,
                     selected = candidate == current.state.tab,
-                    enabled = !busy,
-                    onClick = { run { applyEvent(current, PageEventDto.SetTab(candidate)) } },
+                    enabled = !session.busy,
+                    onClick = {
+                        fretboard.applyEvent(PageEventDto.SetTab(candidate))
+                    },
                     modifier = Modifier.testTag("tab-${candidate.name.lowercase()}"),
                 )
             }
@@ -256,8 +164,8 @@ private fun FretboardScreen() {
             // all — the note below says why instead.
             if (current.instrumentId() != InstrumentDto.PIANO) {
                 TextButton(
-                    onClick = { openTuning() },
-                    enabled = !busy,
+                    onClick = { fretboard.openTuning() },
+                    enabled = !session.busy,
                     modifier = Modifier.testTag("open-tuning"),
                 ) {
                     Text("Tuning")
@@ -280,77 +188,50 @@ private fun FretboardScreen() {
         when (current.state.tab) {
             TabDto.VISUALIZER -> VisualizerScreen(
                 view = current,
-                root = root,
-                quality = quality,
-                onRootChange = { root = it },
-                onQualityChange = { quality = it },
+                root = session.root,
+                quality = session.quality,
+                onRootChange = { root -> fretboard.setRoot(root) },
+                onQualityChange = { quality -> fretboard.setQuality(quality) },
                 onAdd = {
-                    run { applyEvent(current, PageEventDto.AddChord(ChordDto(root, quality))) }
+                    fretboard.applyEvent(
+                        PageEventDto.AddChord(ChordDto(session.root, session.quality)),
+                    )
                 },
                 onRemove = { index ->
-                    run { applyEvent(current, PageEventDto.RemoveChord(index.toULong())) }
+                    fretboard.applyEvent(PageEventDto.RemoveChord(index.toULong()))
                 },
                 onToggleHighlight = { index ->
-                    run { applyEvent(current, PageEventDto.HighlightChord(index.toULong())) }
+                    fretboard.applyEvent(PageEventDto.HighlightChord(index.toULong()))
                 },
-                onClearAll = { run { applyEvent(current, PageEventDto.ClearAllChords) } },
-                enabled = !busy,
+                onClearAll = { fretboard.applyEvent(PageEventDto.ClearAllChords) },
+                enabled = !session.busy,
             )
 
             TabDto.ANALYZER -> AnalyzerScreen(
                 view = current,
                 onTapPosition = { position: PositionDto ->
-                    run { applyEvent(current, PageEventDto.ToggleNote(position)) }
+                    fretboard.applyEvent(PageEventDto.ToggleNote(position))
                 },
                 onTapPitch = { pitch: Int ->
-                    run { applyEvent(current, PageEventDto.TogglePianoKey(pitch.toUByte())) }
+                    fretboard.applyEvent(PageEventDto.TogglePianoKey(pitch.toUByte()))
                 },
-                onClearSelection = { run { applyEvent(current, PageEventDto.ClearSelection) } },
-                enabled = !busy,
+                onClearSelection = { fretboard.applyEvent(PageEventDto.ClearSelection) },
+                enabled = !session.busy,
             )
         }
     }
 
-    val open = draft
+    val open = session.draft
     if (open != null) {
         TuningSheet(
             draft = open,
             stringCount = currentStringCount(view, open.instrument),
-            presets = presets,
-            onSelectPreset = { name ->
-                // The engine answers the whole draft for the chosen name; the
-                // client takes its answer and never assumes the choice applied.
-                withEngine({ selectTuningPreset(open, name) }) { edited -> draft = edited }
-            },
-            onChangeString = { stringIndex, note ->
-                withEngine({ changeTuningString(open, stringIndex, note) }) { edited ->
-                    draft = edited
-                }
-            },
-            onApply = {
-                val page = view
-                if (page != null) {
-                    busy = true
-                    scope.launch {
-                        when (val result = applyTuningDraft(page, open)) {
-                            is SessionLoad.Ready -> {
-                                view = result.view
-                                error = null
-                                draft = null
-                            }
-                            is SessionLoad.Failed -> {
-                                error = result.reason
-                                // A stale draft cannot be committed: it is dropped
-                                // so the sheet cannot be applied twice.
-                                draft = null
-                            }
-                        }
-                        busy = false
-                    }
-                }
-            },
-            onCancel = { draft = null },
-            enabled = !busy,
+            presets = session.presets,
+            onSelectPreset = { name -> fretboard.selectPreset(name) },
+            onChangeString = { stringIndex, note -> fretboard.changeString(stringIndex, note) },
+            onApply = { fretboard.applyDraft() },
+            onCancel = { fretboard.cancelDraft() },
+            enabled = !session.busy,
         )
     }
 }

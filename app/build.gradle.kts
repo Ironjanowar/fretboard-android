@@ -21,8 +21,8 @@ android {
         applicationId = "dev.ironjanowar.fretboard"
         minSdk = 29
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.4.1"
 
         // The engine artifact ships one ABI (arm64-v8a, DEC-10), so the
         // application declares only that: an APK carrying native libraries it
@@ -30,6 +30,11 @@ android {
         ndk {
             abiFilters += "arm64-v8a"
         }
+
+        // The instrumented suite (the rotation regression) runs on a device
+        // through the Android JUnit runner; there is no emulator in the build
+        // environment, so it compiles here and runs where a device exists.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -81,4 +86,12 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     testImplementation(libs.junit)
+
+    // The device-side regression test: ActivityScenario.recreate() with the
+    // Compose test rule. Test-only dependencies; nothing here reaches the APK.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }
