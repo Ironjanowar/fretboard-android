@@ -4,8 +4,12 @@ import dev.ironjanowar.fretboard.core.ChordDto
 import dev.ironjanowar.fretboard.core.KeyRowDto
 import dev.ironjanowar.fretboard.core.MultiKeyGroupDto
 import dev.ironjanowar.fretboard.core.PageStateDto
-import dev.ironjanowar.fretboard.core.keySuggestions
-import dev.ironjanowar.fretboard.core.multiKeySuggestions
+// Aliased on purpose: this object's own methods carry the same names, and a bare
+// `keySuggestions(state)` inside `keySuggestions` resolves to the *member*, which is
+// nearer than an import — the port then calls itself, forever. The alias makes the
+// binding the only thing that name can mean here.
+import dev.ironjanowar.fretboard.core.keySuggestions as bindingKeySuggestions
+import dev.ironjanowar.fretboard.core.multiKeySuggestions as bindingMultiKeySuggestions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,10 +44,10 @@ interface KeySuggestionEngine {
 object BindingKeySuggestionEngine : KeySuggestionEngine {
 
     override suspend fun keySuggestions(state: PageStateDto): List<KeyRowDto> =
-        withContext(Dispatchers.Default) { keySuggestions(state) }
+        withContext(Dispatchers.Default) { bindingKeySuggestions(state) }
 
     override suspend fun multiKeySuggestions(state: PageStateDto): List<MultiKeyGroupDto> =
-        withContext(Dispatchers.Default) { multiKeySuggestions(state) }
+        withContext(Dispatchers.Default) { bindingMultiKeySuggestions(state) }
 }
 
 /**
