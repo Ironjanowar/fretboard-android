@@ -99,6 +99,25 @@ fun parseDeliveredIntent(intent: DeliveredIntent): DeliveredText = when {
     }
 }
 
+/**
+ * Read one pasted text as the delivery it is (task `A19`).
+ *
+ * A paste is a delivery the user made by hand, so it goes through the same rules as a
+ * shared one — blank text and an oversized text are refused with the same sentences —
+ * and there is no second, laxer way into the engine. `null` is an empty clipboard, which
+ * is a delivery that carried no text.
+ *
+ * Nothing is read from the clipboard here: the caller reads it, on an explicit action,
+ * and this only decides what the text is worth. The application never scrapes it.
+ */
+fun pastedText(text: String?): DeliveredText = parseDeliveredIntent(
+    DeliveredIntent(
+        action = Intent.ACTION_SEND,
+        type = IMPORTABLE_TYPE,
+        texts = listOfNotNull(text),
+    ),
+)
+
 /** Read the platform's own `Intent` into the shape the parser decides on. */
 fun Intent.asDeliveredIntent(): DeliveredIntent = DeliveredIntent(
     action = action,
