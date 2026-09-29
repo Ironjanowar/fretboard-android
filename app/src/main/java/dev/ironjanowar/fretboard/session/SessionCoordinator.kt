@@ -18,6 +18,7 @@ import dev.ironjanowar.fretboard.core.chordColorSlots
 import dev.ironjanowar.fretboard.core.chordDetails
 import dev.ironjanowar.fretboard.core.defaultState
 import dev.ironjanowar.fretboard.core.frettedSurface
+import dev.ironjanowar.fretboard.core.importLegacyUrl
 import dev.ironjanowar.fretboard.core.instruments
 import dev.ironjanowar.fretboard.core.keyboardSurface
 import dev.ironjanowar.fretboard.core.presets
@@ -173,6 +174,27 @@ suspend fun restoreSession(state: PageStateDto): SessionLoad = withContext(Dispa
         SessionLoad.Ready(derive(state, instruments(), qualityGroups()))
     } catch (error: Throwable) {
         SessionLoad.Failed(engineFailure(error))
+    }
+}
+
+/**
+ * Read one delivered legacy link, in the engine's own terms (task `A19`).
+ *
+ * This is the reader behind paste and `ACTION_SEND`, and it is deliberately *not*
+ * [import_url]'s strict sibling: an approved production origin does not exist yet
+ * (DEC-07), and the plan gates *sharing* on it, not the reading of a link the user
+ * deliberately handed over. Nothing here emits a link either — `share_url` is a
+ * separate task.
+ *
+ * The engine answers with the page, or the call fails and [engineFailure] says so in
+ * English: a refusal is never dressed up as a page, and a host failure names its own
+ * exception class. No URL is split and no parameter is decoded in this file.
+ */
+suspend fun readLegacyLink(text: String): BootCandidate = withContext(Dispatchers.Default) {
+    try {
+        BootCandidate.Valid(importLegacyUrl(text))
+    } catch (error: Throwable) {
+        BootCandidate.Rejected(engineFailure(error))
     }
 }
 

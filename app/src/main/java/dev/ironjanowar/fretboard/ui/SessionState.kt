@@ -4,6 +4,8 @@ import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
 import dev.ironjanowar.fretboard.core.KeySuggestionDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.links.DeliveredText
+import dev.ironjanowar.fretboard.links.IncomingSessionSource
 import dev.ironjanowar.fretboard.storage.SessionStore
 import dev.ironjanowar.fretboard.storage.NO_STORED_REVISION
 import dev.ironjanowar.fretboard.storage.StoreOutcome
@@ -105,7 +107,12 @@ class SessionStateHolder(
     private val engine: SessionEngine = BindingSessionEngine,
     private val keyEngine: KeyProgressionEngine = BindingKeyProgressionEngine,
     private val store: SessionStore,
-    private val boot: BootCoordinator = BootCoordinator(engine = engine, store = store),
+    private val deliveries: IncomingSessionSource = IncomingSessionSource(),
+    private val boot: BootCoordinator = BootCoordinator(
+        engine = engine,
+        store = store,
+        delivered = deliveries,
+    ),
 ) {
 
     /** The current session. Read-only outside: every write is a transition. */
@@ -159,6 +166,21 @@ class SessionStateHolder(
      * otherwise. The retry action.
      */
     fun reload() {
+        publish(state.copy(busy = true))
+        reopen()
+    }
+
+    /**
+     * Hand one delivery from outside in, and let it win (task `A19`).
+     *
+     * A shared link does not arrive at startup only: it arrives while a session may
+     * well be on screen. So this is not a second startup path — the delivery is handed
+     * to the source and the arbitration runs again, where an accepted candidate beats
+     * whatever is held. The generation the arbitration keeps is what makes this safe
+     * next to a boot already in flight.
+     */
+    fun deliver(delivered: DeliveredText) {
+        deliveries.deliver(delivered)
         publish(state.copy(busy = true))
         reopen()
     }

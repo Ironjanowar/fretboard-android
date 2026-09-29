@@ -36,6 +36,19 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+              A19: a link shared from another app. `text/plain` only, because that is
+              the traffic the parser reads, and `SEND` only — `ACTION_VIEW` is
+              deliberately not declared, since serving it would mean claiming a web
+              origin this application has no approved one of yet (DEC-07). No App Links
+              metadata is declared for the same reason.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
     </application>
 
