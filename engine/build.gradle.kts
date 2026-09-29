@@ -22,12 +22,20 @@ android {
     }
 }
 
+// The artifact version is read from the lock `scripts/prepare_core.py` verifies,
+// so the coordinate and the pinned artifact cannot drift apart: bumping the
+// engine is one edit in `core-release.lock.json`, not two.
+val engineVersion = Regex("\"artifact_version\"\\s*:\\s*\"([^\"]+)\"")
+    .find(rootProject.file("core-release.lock.json").readText())
+    ?.groupValues?.get(1)
+    ?: error("core-release.lock.json declares no artifact_version")
+
 dependencies {
     // The prepared engine artifact: `jni/<abi>/libfretboard_mobile_ffi.so` plus
     // the generated binding classes under `dev.ironjanowar.fretboard.core`.
     // It is installed into the local `engine/maven` repository by
     // `scripts/prepare_core.py`, which verifies its SHA-256 first; that
     // directory is never committed.
-    api("${libs.versions.fretboardEngine.get()}:fretboard-engine:0.5.0")
+    api("${libs.versions.fretboardEngine.get()}:fretboard-engine:$engineVersion")
     api("net.java.dev.jna:jna:5.17.0@aar")
 }
