@@ -1,6 +1,7 @@
 package dev.ironjanowar.fretboard.ui.tuning
 
 import dev.ironjanowar.fretboard.core.AdapterException
+import dev.ironjanowar.fretboard.session.engineFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -68,11 +69,15 @@ class PresetPickerTest {
 
     @Test
     fun `an engine that cannot be reached is also a refusal, never a guessed list`() {
-        val state = presetPickerRefusal(IllegalStateException("no library"))
+        val failure = IllegalStateException("no library")
+        val state = presetPickerRefusal(failure)
 
         assertTrue(state is PresetPickerState.Refused)
         assertEquals(
-            "The engine could not be loaded: no library",
+            // The wiring, not the wording: `engineFailure`'s own sentence is pinned
+            // in `session/EngineFailureTest.kt`, so this assertion cannot drift from
+            // it and does not repeat it.
+            engineFailure(failure),
             (state as PresetPickerState.Refused).reason,
         )
     }
