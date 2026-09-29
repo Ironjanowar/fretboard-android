@@ -20,6 +20,7 @@ import dev.ironjanowar.fretboard.session.STALE_DRAFT_MESSAGE
 import dev.ironjanowar.fretboard.session.TuningDraft
 import dev.ironjanowar.fretboard.session.markedFrets
 import dev.ironjanowar.fretboard.session.markedPitches
+import dev.ironjanowar.fretboard.storage.support.FakeSessionStore
 import dev.ironjanowar.fretboard.ui.tuning.PresetPickerState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -122,6 +123,7 @@ class SessionStateHolderTest {
     /** A scripted port: no musical rule, only the answers a test hands it. */
     private class ScriptedEngine : SessionEngine {
         var startAnswer: SessionLoad = SessionLoad.Failed("no session was scripted")
+        var restoreAnswer: SessionLoad? = null
         var applyAnswer: SessionLoad? = null
         var switchAnswer: SessionLoad? = null
         var presetNames: List<String> = emptyList()
@@ -133,6 +135,7 @@ class SessionStateHolderTest {
 
         var startCalls: Int = 0
         val applied = mutableListOf<PageEventDto>()
+        val restored = mutableListOf<PageStateDto>()
         val switched = mutableListOf<InstrumentDefinitionDto>()
         val presetRequests = mutableListOf<InstrumentDto>()
         val openedFor = mutableListOf<SessionView>()
@@ -142,6 +145,17 @@ class SessionStateHolderTest {
         override suspend fun start(): SessionLoad {
             startCalls += 1
             return startAnswer
+        }
+
+        /**
+         * The engine's own view of a page the client already holds (A17). This test
+         * has no store, so the holder never routes through it; it is scripted all
+         * the same, because a port whose only implementation is the binding would
+         * let a store-less path look like a store-based one.
+         */
+        override suspend fun restore(page: PageStateDto): SessionLoad {
+            restored += page
+            return restoreAnswer ?: startAnswer
         }
 
         override suspend fun apply(view: SessionView, event: PageEventDto): SessionLoad {
@@ -193,9 +207,19 @@ class SessionStateHolderTest {
      * is handed `viewModelScope`. The scripted port never really suspends, so the
      * transitions below are complete when each action returns — the tests assert
      * the holder's transitions, never a thread's timing.
+     *
+     * The store is a scripted one with nothing in it. A17 gave the holder a store,
+     * and this suite still asks the questions it asked before that — what the
+     * *holder* does with a session — so storage gets a fake here and the holder's
+     * storage behaviour is pinned against the real store in
+     * `storage/SessionStoreTest.kt`.
      */
     private fun holder(engine: ScriptedEngine) =
-        SessionStateHolder(CoroutineScope(Dispatchers.Unconfined), engine)
+        SessionStateHolder(
+            CoroutineScope(Dispatchers.Unconfined),
+            engine,
+            store = FakeSessionStore(),
+        )
 
     // ------------------------------------------------------------- rotation
 
