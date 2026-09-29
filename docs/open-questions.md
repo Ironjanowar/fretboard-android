@@ -65,17 +65,16 @@ missing artifacts or a reviewed change to `gradle/verification-metadata.xml`.
 
 **Not blocked:** `:app:lintAnalyzeDebug` (main sources only) runs and is clean.
 
-## `page_params` is left `false` in API revision 6
+## Resolved: `page_params` is `true` in API revision 7
 
-**Open:** revision 6 sets `snapshot: true` because C21 exports the snapshot codecs,
-but leaves `page_params: false`, because no page-params *entry point*
-(`decode_page_params`/`encode_page_params`) is exported — the URL transport reaches
-that codec internally through `import_url`.
+Revision 6 left the flag `false` because **no page-params entry point was exported**
+— the URL transport reached that codec only internally, through `import_url` — and
+setting it would have been a claim without a surface behind it.
 
-**Why:** whether reachability through `import_url` should set the flag is a contract
-decision, not an implementation detail.
+Revision 7 exports the tolerant legacy reader (`import_legacy_url`), which *is* that
+reader over the boundary, so the flag is now `true` and this question is closed rather
+than carried into the P7 audit.
 
-**For:** the P7 audit (`C22`), which owns the contract's final state.
 
 ## Environment drift recorded, not fixed
 
