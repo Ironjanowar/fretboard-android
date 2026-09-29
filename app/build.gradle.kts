@@ -21,8 +21,8 @@ android {
         applicationId = "dev.ironjanowar.fretboard"
         minSdk = 29
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.4.1"
+        versionCode = 6
+        versionName = "0.5.0"
 
         // The engine artifact ships one ABI (arm64-v8a, DEC-10), so the
         // application declares only that: an APK carrying native libraries it
@@ -86,6 +86,10 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     testImplementation(libs.junit)
+    // The suggestion lifecycle's virtual-time harness (A16): a StandardTestDispatcher
+    // proves the request left the caller's thread, and a controllable fake proves a
+    // late answer cannot replace a newer one.
+    testImplementation(libs.kotlinx.coroutines.test)
 
     // The device-side regression test: ActivityScenario.recreate() with the
     // Compose test rule. Test-only dependencies; nothing here reaches the APK.

@@ -5,8 +5,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
+import dev.ironjanowar.fretboard.core.KeySuggestionDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.session.BindingKeySuggestionEngine
+import dev.ironjanowar.fretboard.session.EvaluationCoordinator
+import dev.ironjanowar.fretboard.session.EvaluationUiState
 import dev.ironjanowar.fretboard.ui.SessionState
 import dev.ironjanowar.fretboard.ui.SessionStateHolder
 
@@ -19,18 +24,31 @@ import dev.ironjanowar.fretboard.ui.SessionStateHolder
  * activity's `ViewModelStore` is retained across the recreation, so the session
  * this holds is the session the user was looking at when they turned the phone.
  *
- * It owns nothing but the holder and a Compose mirror, so the whole session —
- * instrument, tuning, tab, the marked positions and keys, the stored chords, the
- * highlight, the root and quality pickers, an open draft with its edits — survives
- * rotation and rotating back, without a byte of it being written to disk. Disk
- * and URL persistence are a separate, later task by decision.
+ * It owns nothing but the holder, the keys panel's own asynchronous lifecycle and
+ * a Compose mirror, so the whole session — instrument, tuning, tab, the marked
+ * positions and keys, the stored chords, the highlight, the root and quality
+ * pickers, an open tuning draft with its edits, the key and progression drafts
+ * with the engine's previews, and the suggestion rows with their expansion —
+ * survives rotation and rotating back, without a byte of it being written to
+ * disk. Disk and URL persistence are a separate, later task by decision.
  *
  * No musical value is computed here or anywhere below it: `SessionStateHolder`
- * asks the engine through its port and keeps the answer.
+ * asks the engine through its port and keeps the answer, and the
+ * [EvaluationCoordinator] only decides *when* to ask — never what a key is.
  */
 class FretboardViewModel : ViewModel() {
 
     private val holder = SessionStateHolder(viewModelScope)
+
+    /**
+     * The keys panel's asynchronous lifecycle.
+     *
+     * A16 puts the request off the main thread and keys it on the chord input
+     * alone: the coordinator is told about every committed page and decides for
+     * itself whether the chords changed, so a tab or highlight tap sends nothing
+     * while an added, removed or cleared chord asks the engine again.
+     */
+    private val evaluation = EvaluationCoordinator(BindingKeySuggestionEngine, viewModelScope)
 
     /**
      * The session, observable by the composition.
@@ -42,8 +60,22 @@ class FretboardViewModel : ViewModel() {
     var state: SessionState by mutableStateOf(holder.state)
         private set
 
+    /**
+     * The keys panel's state, observable by the composition.
+     *
+     * The coordinator is its source of truth; this is the Compose mirror of it,
+     * refreshed after every transition.
+     */
+    var evaluationState: EvaluationUiState by mutableStateOf(evaluation.snapshot())
+        private set
+
     init {
-        holder.onState = { next -> state = next }
+        holder.onState = { next ->
+            state = next
+            next.view?.let { view -> evaluation.onPage(view.state) }
+            evaluationState = evaluation.snapshot()
+        }
+        evaluation.onState = { evaluationState = evaluation.snapshot() }
     }
 
     /** Load the session once; a session already held is never re-asked for. */
@@ -70,4 +102,53 @@ class FretboardViewModel : ViewModel() {
     fun setRoot(root: String) = holder.setRoot(root)
 
     fun setQuality(quality: String) = holder.setQuality(quality)
+
+    // --------------------------------------------- key and progression (A14)
+
+    fun openKey() = holder.openKey()
+
+    fun changeKeyTonic(tonic: String) = holder.changeKeyTonic(tonic)
+
+    fun changeKeyScale(scale: String) = holder.changeKeyScale(scale)
+
+    fun changeKeyMode(mode: ChordModeDto) = holder.changeKeyMode(mode)
+
+    fun applyKeyDraft() = holder.applyKeyDraft()
+
+    fun cancelKeyDraft() = holder.cancelKeyDraft()
+
+    fun openProgression() = holder.openProgression()
+
+    fun selectProgression(progression: String) = holder.selectProgression(progression)
+
+    fun changeProgressionTonic(tonic: String) = holder.changeProgressionTonic(tonic)
+
+    fun applyProgressionDraft() = holder.applyProgressionDraft()
+
+    fun cancelProgressionDraft() = holder.cancelProgressionDraft()
+
+    /** Apply a suggested key: the engine infers the mode from the page's chords. */
+    fun applySuggestedKey(suggestion: KeySuggestionDto) =
+        holder.applySuggestedKey(suggestion)
+
+    // --------------------------------------------------- suggestions (A15/A16)
+
+    /** Show or hide the collapsed groups' other modes. Shared across groups. */
+    fun toggleKeyExpansion() = evaluation.toggleExpanded()
+
+    /** The panel's Retry: ask the engine again for the current chords. */
+    fun retryKeyEvaluation() {
+        state.view?.let { view -> evaluation.retry(view.state) }
+    }
+
+    /**
+     * The ViewModel is going away: nothing in flight may land afterwards.
+     *
+     * A disposed session invalidates the suggestion tokens, so a late answer
+     * cannot resurrect a panel that no longer has an owner.
+     */
+    override fun onCleared() {
+        evaluation.invalidate()
+        super.onCleared()
+    }
 }

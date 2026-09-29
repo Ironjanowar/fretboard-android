@@ -62,10 +62,13 @@ class RotationStateTest {
         awaitSession()
 
         // An instrument switch, there and back: the boundary is the engine's and
-        // the session must come out of it intact, not reset.
-        compose.onNodeWithTag("instrument-PIANO").performClick()
+        // the session must come out of it intact, not reset. The picker is a
+        // dropdown, so the menu is opened before its entry is clicked.
+        compose.onNodeWithTag("instrument-anchor").performClick()
+        compose.onNodeWithTag("instrument-option-PIANO").performClick()
         awaitTag("keyboard-surface")
-        compose.onNodeWithTag("instrument-GUITAR").performClick()
+        compose.onNodeWithTag("instrument-anchor").performClick()
+        compose.onNodeWithTag("instrument-option-GUITAR").performClick()
         awaitTag("fretboard-surface")
         awaitSession()
 
@@ -115,7 +118,8 @@ class RotationStateTest {
     fun theKeyboardsMarkedKeysSurviveRotatingAndRotatingBack() {
         awaitSession()
 
-        compose.onNodeWithTag("instrument-PIANO").performClick()
+        compose.onNodeWithTag("instrument-anchor").performClick()
+        compose.onNodeWithTag("instrument-option-PIANO").performClick()
         awaitTag("keyboard-surface")
         val keyboardCaption = captionText()
 

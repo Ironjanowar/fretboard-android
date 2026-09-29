@@ -41,6 +41,8 @@ import dev.ironjanowar.fretboard.session.lastFret
 import dev.ironjanowar.fretboard.ui.analyzer.AnalyzerScreen
 import dev.ironjanowar.fretboard.ui.common.PillChip
 import dev.ironjanowar.fretboard.ui.controls.InstrumentPicker
+import dev.ironjanowar.fretboard.ui.keys.KeySheet
+import dev.ironjanowar.fretboard.ui.progressions.ProgressionSheet
 import dev.ironjanowar.fretboard.ui.tuning.TuningSheet
 import dev.ironjanowar.fretboard.ui.visualizer.VisualizerScreen
 
@@ -204,6 +206,14 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
                     fretboard.applyEvent(PageEventDto.HighlightChord(index.toULong()))
                 },
                 onClearAll = { fretboard.applyEvent(PageEventDto.ClearAllChords) },
+                keyRows = fretboard.evaluationState.keys,
+                multiKeyGroups = fretboard.evaluationState.multiKeys,
+                keyExpanded = fretboard.evaluationState.expanded,
+                onToggleKeyExpansion = { fretboard.toggleKeyExpansion() },
+                onApplySuggestion = { suggestion -> fretboard.applySuggestedKey(suggestion) },
+                onRetryKeys = { fretboard.retryKeyEvaluation() },
+                onOpenKey = { fretboard.openKey() },
+                onOpenProgression = { fretboard.openProgression() },
                 enabled = !session.busy,
             )
 
@@ -231,6 +241,37 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
             onChangeString = { stringIndex, note -> fretboard.changeString(stringIndex, note) },
             onApply = { fretboard.applyDraft() },
             onCancel = { fretboard.cancelDraft() },
+            enabled = !session.busy,
+        )
+    }
+
+    // The A14 key and progression sheets: drafts of their own, each holding the
+    // engine's preview; neither touches the committed page until Apply sends the
+    // engine its own commit event.
+    val keyDraft = session.keyDraft
+    if (keyDraft != null) {
+        KeySheet(
+            draft = keyDraft,
+            previewPending = session.keyPreviewPending,
+            onTonicChange = { tonic -> fretboard.changeKeyTonic(tonic) },
+            onScaleChange = { scale -> fretboard.changeKeyScale(scale) },
+            onModeChange = { mode -> fretboard.changeKeyMode(mode) },
+            onApply = { fretboard.applyKeyDraft() },
+            onCancel = { fretboard.cancelKeyDraft() },
+            enabled = !session.busy,
+        )
+    }
+
+    val progressionDraft = session.progressionDraft
+    if (progressionDraft != null) {
+        ProgressionSheet(
+            draft = progressionDraft,
+            catalog = session.progressionCatalog,
+            previewPending = session.progressionPreviewPending,
+            onTonicChange = { tonic -> fretboard.changeProgressionTonic(tonic) },
+            onSelectProgression = { id -> fretboard.selectProgression(id) },
+            onApply = { fretboard.applyProgressionDraft() },
+            onCancel = { fretboard.cancelProgressionDraft() },
             enabled = !session.busy,
         )
     }
