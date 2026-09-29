@@ -8,6 +8,8 @@ import dev.ironjanowar.fretboard.storage.SessionStore
 import dev.ironjanowar.fretboard.storage.NO_STORED_REVISION
 import dev.ironjanowar.fretboard.storage.StoreOutcome
 import dev.ironjanowar.fretboard.storage.StoredSession
+import dev.ironjanowar.fretboard.session.BootCoordinator
+import dev.ironjanowar.fretboard.session.BootDecision
 import dev.ironjanowar.fretboard.session.BindingKeyProgressionEngine
 import dev.ironjanowar.fretboard.session.BindingSessionEngine
 import dev.ironjanowar.fretboard.session.KeyDraft
@@ -103,6 +105,7 @@ class SessionStateHolder(
     private val engine: SessionEngine = BindingSessionEngine,
     private val keyEngine: KeyProgressionEngine = BindingKeyProgressionEngine,
     private val store: SessionStore,
+    private val boot: BootCoordinator = BootCoordinator(engine = engine, store = store),
 ) {
 
     /** The current session. Read-only outside: every write is a transition. */
@@ -162,24 +165,32 @@ class SessionStateHolder(
 
     /** Reopen the last session, or open the engine's own when there is none. */
     private fun reopen() {
-        scope.launch { publish(opened(store.read())) }
+        val holding = state.view != null
+        scope.launch {
+            when (val decision = boot.open(holding)) {
+                is BootDecision.Open -> publish(opened(decision))
+                is BootDecision.KeepCurrent -> publish(state.copy(error = decision.notice))
+                // A newer decision is already on its way: this answer is not one.
+                BootDecision.Superseded -> Unit
+            }
+        }
     }
 
     /**
-     * The session to show for what the store answered.
+     * The session to show for one arbitration decision.
      *
-     * A stored page is handed to the engine for its own view of it — surfaces,
-     * details, slots and analysis included — rather than reconstructed here. A
-     * refusal is not a failure of the session: the engine's own session opens and
-     * the reason is shown beside it, while the refused bytes stay on disk.
+     * A page the engine already holds — or the engine's own defaults — arrives here
+     * as the engine's own view of it, surfaces, details, slots and analysis included,
+     * never reconstructed by the client. The revision to continue from is the
+     * store's, whichever source won, so a restored or delivered session is written as
+     * the newest one rather than as a first write the store would refuse. A notice —
+     * a refused incoming delivery, an unusable stored session — is shown *beside* the
+     * session, never instead of it.
      */
-    private suspend fun opened(stored: StoredSession): SessionState = when (stored) {
-        is StoredSession.None -> loaded(engine.start())
-        is StoredSession.Refused -> loaded(engine.start()).copy(error = stored.reason)
-        is StoredSession.Restored -> {
-            storedRevision = stored.revision
-            loaded(engine.restore(stored.page))
-        }
+    private fun opened(decision: BootDecision.Open): SessionState {
+        storedRevision = decision.storedRevision
+        val next = loaded(decision.load)
+        return decision.notice?.let { notice -> next.copy(error = notice) } ?: next
     }
 
     /** Send one page event; the engine's reducer decides what it does. */
