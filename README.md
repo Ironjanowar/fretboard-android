@@ -60,10 +60,32 @@ Two tabs of one screen:
 If the engine cannot answer, the screen says so in English and names the
 reason — it never shows a plausible fake answer.
 
+## What 0.4.1 fixes (the rotation bug)
+
+Turning the phone used to lose the whole session. The activity is destroyed and
+recreated on a configuration change, and every piece of the session lived in the
+composition's own `remember`, so rotating came back to an empty screen. The
+session now lives in a `FretboardViewModel`, which the activity's retained
+`ViewModelStore` keeps across the recreation: rotate to landscape, rotate back,
+and the instrument, the tuning, the tab, the marked positions and keys, the
+stored chords, the highlight, the root and quality pickers and an open tuning
+draft **with its unapplied edits** are all still there. The board's scroll
+position survives too — Compose's `rememberScrollState` is saveable, so it is
+restored from the saved instance state rather than kept here.
+
+Nothing about *what* computes a value moved: every value is still the engine's,
+arriving through the same bindings, and Kotlin still holds no musical logic. The
+manifest deliberately still declares no `android:configChanges`, so the activity
+is recreated as the platform intends and resources are re-resolved.
+
+This is not persistence: nothing is written to disk and no page-params codec is
+exported. Surviving process death, URLs and saved sessions belong to the
+session/URL phase.
+
 ## Install it
 
 * Requires an **arm64** device with **Android 10 (API 29)** or newer.
-* With a cable and `adb`: `adb install -r fretboard-0.4.0-arm64-release.apk`
+* With a cable and `adb`: `adb install -r fretboard-0.4.1-arm64-release.apk`
 * Without a cable: copy the APK to the phone, tap it, and allow installing from
   that source when the system asks.
 
@@ -94,7 +116,14 @@ location with `FRETBOARD_SIGNING`) and fails if it is absent.
 ```sh
 python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # the artifact contract
 ./gradlew :app:testDebugUnitTest                     # the app's unit tests
+./gradlew :app:compileDebugAndroidTestKotlin         # the device suite compiles
 ```
+
+`app/src/androidTest` holds the device-side tests, including the rotation
+regression (`RotationStateTest`, which recreates the activity through
+`ActivityScenario`). No emulator is available in this environment (`/dev/kvm`
+absent) and no device is attached, so that suite is compiled but not run: it
+belongs to a machine with a device.
 
 `docs/build-contract.md` records the pinned toolchain, the artifact contract and
 the decisions this build depends on.
