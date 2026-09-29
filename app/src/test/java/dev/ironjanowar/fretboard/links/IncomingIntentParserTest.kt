@@ -133,4 +133,40 @@ class IncomingIntentParserTest {
 
         assertEquals(parseDeliveredIntent(intent), parseDeliveredIntent(intent))
     }
+
+    // --------------------------------------------------------------- paste (A19)
+
+    @Test
+    fun `a pasted text is a delivery the user made by hand`() {
+        assertEquals(
+            DeliveredText.Text("https://any.test/?chords=Cmaj"),
+            pastedText("https://any.test/?chords=Cmaj"),
+        )
+    }
+
+    @Test
+    fun `an empty clipboard is a delivery that carried no text`() {
+        val delivered = pastedText(null)
+
+        assertTrue(delivered is DeliveredText.Refused)
+        assertTrue((delivered as DeliveredText.Refused).reason.contains("no text"))
+    }
+
+    @Test
+    fun `a paste goes through the very same rules as a share, never a laxer path`() {
+        val blank = pastedText("   ")
+        val oversized = pastedText("h".repeat(MAX_INCOMING_CHARS + 1))
+
+        assertTrue("blank did not go through the share rules", blank is DeliveredText.Refused)
+        assertTrue(oversized is DeliveredText.Refused)
+        assertTrue(
+            "the limit is the same one a share is held to",
+            (oversized as DeliveredText.Refused).reason.contains(MAX_INCOMING_CHARS.toString()),
+        )
+    }
+
+    @Test
+    fun `a pasted text is trimmed like a shared one`() {
+        assertEquals(DeliveredText.Text("hola"), pastedText("  hola\n"))
+    }
 }
