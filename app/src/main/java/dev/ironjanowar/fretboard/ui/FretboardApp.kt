@@ -40,6 +40,7 @@ import dev.ironjanowar.fretboard.core.InstrumentStateDto
 import dev.ironjanowar.fretboard.core.PageEventDto
 import dev.ironjanowar.fretboard.core.PositionDto
 import dev.ironjanowar.fretboard.core.TabDto
+import dev.ironjanowar.fretboard.links.ShareConfig
 import dev.ironjanowar.fretboard.links.pastedText
 import dev.ironjanowar.fretboard.session.SessionView
 import dev.ironjanowar.fretboard.session.lastFret
@@ -200,6 +201,18 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
             ) {
                 Text("Pegar enlace")
             }
+        }
+
+        // A20: sharing is off while no web origin is approved, and it says so where a
+        // share control would be — never a control that could not work. The decision and
+        // its sentence live in `ShareConfig`, so approving an origin removes this note
+        // with the reason, and the tests for both are beside them.
+        ShareConfig.unavailableReason?.let { reason ->
+            NotApplicable(
+                title = "Sharing is not available in this build",
+                detail = reason,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
 
         // The keyboard has no tuning: said as not applicable, never as a control
