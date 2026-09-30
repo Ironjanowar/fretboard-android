@@ -38,6 +38,20 @@ python3 -m unittest discover -s scripts/tests
   functions (`readelf -W --dyn-syms`) and the dex carries the expected binding names.
 - The APK installs over the previously delivered build of the same signing identity.
 
+## Running the device tests against the release variant
+
+The instrumentation tests are not debug-only. The build files read the variant from a
+property, so a release verification can point them at the release build (task `A24`):
+
+```bash
+./gradlew :app:assembleRelease
+./gradlew -PtestBuildType=release :app:connectedReleaseAndroidTest
+```
+
+The default stays `debug`, which is what a developer runs. Verified without a device, which is
+the only part that can be verified here: with the property, `connectedReleaseAndroidTest` is a
+task of the build and without it `connectedDebugAndroidTest` is, exactly as before.
+
 ## What is not verified here, and why
 
 - **Instrumented tests** (`app/src/androidTest`, including the device tests for restore and

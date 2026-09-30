@@ -37,6 +37,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // A24: the instrumentation tests can be pointed at a variant, so the *release* build can be
+    // tested and not only debug: `-PtestBuildType=release`. The default stays `debug`, which is
+    // what a developer runs, and an explicit value is what a release verification passes.
+    testBuildType = (findProperty("testBuildType") as String?) ?: "debug"
+
     signingConfigs {
         create("release") {
             val configuration = file(
