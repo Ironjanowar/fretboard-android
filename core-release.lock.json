@@ -3,5 +3,5 @@
   "sha256": "8126e3936061279d4690137ae3964cc2c16857d35743fd61aad21d9ac5fd6024",
   "abi": "arm64-v8a",
   "uniffi_runtime_dependency": "net.java.dev.jna:jna:5.17.0",
-  "source_commit": "8124e1f6498c5e1cb6dd0e36f8b3c0d0d4a3c1b7"
+  "source_commit": "8124e1f67ca217da200730d3a8812f2eb9ba9ecc"
 }
