@@ -1,18 +1,18 @@
 package dev.ironjanowar.fretboard.links
 
 /**
- * The canonical web origin this application would send sessions to, or nothing (tasks
- * `A20`/`A21`).
+ * The canonical web origin this application sends sessions to (tasks `A20`/`A21`).
  *
- * **Nothing, today.** A link this application emits is only meaningful against the origin
- * its web app actually runs on, and no origin has been approved (`DEC-07`): writing one
- * here would mean inventing a host and shipping links that point nowhere. The plan says so
- * plainly — *if the host is unresolved, do not invent it, disable sharing with an explicit
- * explanation* — and this is where that decision lives, in one value, so that approving an
- * origin later is a one-line change with a test behind it.
+ * **Approved, and verified live.** The origin is the user's own web application, confirmed by
+ * them and checked from here before it was written down: it answers `200` on the page route,
+ * and it answers `200` on the legacy query this codec emits — including a percent-encoded
+ * sharp (`?chords=C%23maj`), which is the one spelling a raw `#` would break.
  *
- * Importing is unaffected: a pasted or shared text goes through [pastedText], and the
- * engine reads the link without comparing any origin.
+ * It was `null` while the origin was unresolved (`DEC-07`), because a link is only meaningful
+ * against the origin its web app actually runs on and inventing a host would have shipped
+ * links pointing nowhere. The value is here, in one place, so a change is one line with its
+ * test beside it — and the note the application showed while sharing was off disappears with
+ * it, because it is [unavailableReason] that drove that note.
  */
 object ShareConfig {
 
@@ -22,7 +22,7 @@ object ShareConfig {
      * HTTPS only: a web origin that cannot be verified is not one this application will
      * send a session to, and the App Link association (`A21`) needs the same domain.
      */
-    val approvedBase: String? = null
+    val approvedBase: String? = "https://cuwano.gramos.me/"
 
     /** What to show where a share control would be, or `null` when sharing is available. */
     val unavailableReason: String? =
