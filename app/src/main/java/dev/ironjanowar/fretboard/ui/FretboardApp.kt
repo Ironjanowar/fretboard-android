@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -146,6 +147,25 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
                 message = message,
                 onRetry = { fretboard.reload() },
                 enabled = !session.busy,
+            )
+        }
+
+        // A19: what the user *did*, said as a popup they close. A refused paste or delivery is
+        // not a session failure — the session it did not damage is still on screen — so it does
+        // not get the banner with its Retry: it gets one sentence, one button, and it goes away.
+        session.notice?.let { message ->
+            AlertDialog(
+                onDismissRequest = { fretboard.dismissNotice() },
+                title = { Text("No se pudo importar el enlace") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(
+                        onClick = { fretboard.dismissNotice() },
+                        modifier = Modifier.testTag("dismiss-notice"),
+                    ) {
+                        Text("Entendido")
+                    }
+                },
             )
         }
 
