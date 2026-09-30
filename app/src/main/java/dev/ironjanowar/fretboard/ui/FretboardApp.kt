@@ -194,9 +194,22 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
                 }
             }
 
-            // A19: a pasted link is a delivery the user made by hand, so it takes the
-            // same path and the same rules as a shared one — there is no second, laxer
-            // way into the engine, and a refused paste says why instead of doing nothing.
+        }
+
+        // A19/A20: the link controls, on their own line. They used to sit in the tabs' row
+        // beside `Tuning`, where the fixed-width buttons added up past a phone's width and the
+        // last one was squeezed to nothing — a control present in the layout and invisible on
+        // the screen is a control that does not exist, so the row is theirs now.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // A19: a pasted link is a delivery the user made by hand, so it takes the same path
+            // and the same rules as a shared one — no second, laxer way into the engine, and a
+            // refused paste says why instead of doing nothing.
             TextButton(
                 onClick = { fretboard.deliver(pastedText(clipboard.getText()?.text)) },
                 enabled = !session.busy,
@@ -206,9 +219,9 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
             }
 
             // A20: the link this session is, sent through the system chooser. The engine writes
-            // the query and `ShareLauncher` joins it to the approved origin; when sharing is off
-            // the control is disabled and the note below says why, so there is never a control
-            // that quietly does nothing.
+            // the query and `ShareLauncher` joins it to the approved origin; if sharing is ever
+            // off again, the control is disabled and the note below says why, so there is never
+            // a button that quietly does nothing.
             TextButton(
                 onClick = {
                     fretboard.shareLink { url ->
@@ -226,10 +239,10 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
             }
         }
 
-        // A20: sharing is off while no web origin is approved, and it says so where a
-        // share control would be — never a control that could not work. The decision and
-        // its sentence live in `ShareConfig`, so approving an origin removes this note
-        // with the reason, and the tests for both are beside them.
+        // A20: sharing is off while no web origin is approved, and it says so where a share
+        // control would be rather than offering a control that could not work. The decision and
+        // its sentence live in `ShareConfig`, so approving an origin removes this note with the
+        // reason — which is what happened when the origin was approved.
         ShareConfig.unavailableReason?.let { reason ->
             NotApplicable(
                 title = "Sharing is not available in this build",
