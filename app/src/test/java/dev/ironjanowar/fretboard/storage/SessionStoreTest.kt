@@ -519,7 +519,7 @@ class SessionStoreTest {
         )
         assertFalse(
             "a refusal is not a write failure",
-            session.state.error!!.contains("could not be saved"),
+            session.state.notice!!.contains("could not be saved"),
         )
     }
 
