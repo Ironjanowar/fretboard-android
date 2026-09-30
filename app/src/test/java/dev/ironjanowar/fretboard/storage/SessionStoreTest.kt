@@ -505,7 +505,13 @@ class SessionStoreTest {
 
         assertEquals("the session still works", defaultPage, session.state.view?.state)
         assertEquals("the engine's own fresh session", 1, engine.startCalls)
-        assertEquals(refusal, session.state.error)
+        // The reason an unusable stored session was not used is an *explanation*, not a session
+        // failure: the bytes stay on disk and this session works, so it is the message the user
+        // dismisses rather than the banner with its Retry. The behaviour is unchanged; where the
+        // sentence is kept changed, because a refusal that cannot be dismissed covers a session
+        // it never damaged.
+        assertEquals(refusal, session.state.notice)
+        assertEquals("a refusal to *read* is not a failure of the session", null, session.state.error)
         assertEquals(
             "the refused bytes are moved aside by the store, so the new session is durable",
             listOf(1L to defaultPage),
