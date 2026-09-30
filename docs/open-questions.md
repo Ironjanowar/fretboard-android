@@ -5,6 +5,26 @@ open, **why it cannot be decided here**, and **what it blocks**. Nothing in this
 is a guess that has been implemented; where a task could proceed without the answer,
 it did, and says so.
 
+## Decided: there is no CI workflow, by the user's own decision
+
+`A22` in the plan lists `.github/workflows/android.yml` among its files and describes what
+CI would run. The user's decision is explicit and overrides it: **this project does not have
+a CI workflow at all**, so that file is not written, not kept and not to be rebuilt by a
+later session that finds the plan item and assumes it is owed.
+
+What that leaves in its place, and why nothing is lost:
+
+* the checks live in scripts a person runs, and `docs/release-checklist.md` is the list:
+  `scripts/check_boundaries.py`, `scripts/check_release.py` and
+  `python3 -m unittest discover -s scripts/tests`;
+* the release path is the one this repository actually uses — a signed APK built and verified
+  on the machine that holds the signing material, which a PR-triggered workflow could never
+  do anyway (it must not receive signing secrets);
+* the checks that need a device were never going to run in CI here either: the engine
+  publishes only `arm64-v8a` (`DEC-10`), so an x86_64 runner's emulator cannot load it.
+
+The rest of `A22` stands: the two guardrails, their RED cases and the checklist are merged.
+
 ## DEC-07 — the canonical production web origin is unknown
 
 **Open:** the exact HTTPS origin and path the application must accept for URL import
