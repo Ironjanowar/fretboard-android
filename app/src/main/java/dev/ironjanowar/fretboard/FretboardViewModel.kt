@@ -114,6 +114,9 @@ class FretboardViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun deliver(delivered: DeliveredText) = holder.deliver(delivered)
 
+    /** Dismiss the notice about the last delivery; the session itself is untouched. */
+    fun dismissNotice() = holder.dismissNotice()
+
     /**
      * The link for the session on screen, handed to [onLink] when there is one (task `A20`).
      *

@@ -62,6 +62,16 @@ import kotlinx.coroutines.launch
 data class SessionState(
     val view: SessionView? = null,
     val error: String? = null,
+
+    /**
+     * A message about something the user *did* — a refused paste, a refused delivery — as
+     * opposed to [error], which is what went wrong with the session itself.
+     *
+     * The two are different things and are shown differently: a session failure keeps its
+     * banner with its Retry, while this one is a notice the user dismisses. A refusal that
+     * cannot be dismissed and covers the session it did not damage is worse than no message.
+     */
+    val notice: String? = null,
     val busy: Boolean = true,
     val draft: TuningDraft? = null,
     val presets: PresetPickerState = PresetPickerState.NotApplicable,
@@ -171,6 +181,17 @@ class SessionStateHolder(
     }
 
     /**
+     * Dismiss the notice about the last thing the user did (task `A19`).
+     *
+     * Nothing else changes: the session a refused delivery did *not* damage is the session that
+     * stays on screen, so dismissing is exactly what it says — the message goes and the session
+     * was never touched.
+     */
+    fun dismissNotice() {
+        if (state.notice != null) publish(state.copy(notice = null))
+    }
+
+    /**
      * Hand one delivery from outside in, and let it win (task `A19`).
      *
      * A shared link does not arrive at startup only: it arrives while a session may
@@ -191,7 +212,7 @@ class SessionStateHolder(
         scope.launch {
             when (val decision = boot.open(holding)) {
                 is BootDecision.Open -> publish(opened(decision))
-                is BootDecision.KeepCurrent -> publish(state.copy(error = decision.notice))
+                is BootDecision.KeepCurrent -> publish(state.copy(notice = decision.notice))
                 // A newer decision is already on its way: this answer is not one.
                 BootDecision.Superseded -> Unit
             }
@@ -212,7 +233,7 @@ class SessionStateHolder(
     private fun opened(decision: BootDecision.Open): SessionState {
         storedRevision = decision.storedRevision
         val next = loaded(decision.load)
-        return decision.notice?.let { notice -> next.copy(error = notice) } ?: next
+        return decision.notice?.let { notice -> next.copy(notice = notice) } ?: next
     }
 
     /** Send one page event; the engine's reducer decides what it does. */
