@@ -52,13 +52,13 @@ The default stays `debug`, which is what a developer runs. Verified without a de
 the only part that can be verified here: with the property, `connectedReleaseAndroidTest` is a
 task of the build and without it `connectedDebugAndroidTest` is, exactly as before.
 
-## What is not verified here, and why
+## Device verification and remaining gaps
 
-- **Instrumented tests** (`app/src/androidTest`, including the device tests for restore and
-  the import route) are compiled but never executed in this environment: there is no device
-  and no emulator (`/dev/kvm` is absent). Any claim about them is a claim about compilation.
-- **`./gradlew :app:lintDebug`** cannot run here: espresso is missing from the offline
-  dependency cache, which is pre-existing and unrelated to the release.
+- **Instrumented tests** pass 21/21 on the API 37 x86_64 AVD for the debug variant,
+  including rotation/restore, engine snapshot storage, and the Compose UI surfaces.
+  Release-variant instrumentation still requires the real release signing material.
+- **`./gradlew :app:lintDebug`** cannot run offline because
+  `com.android.tools.lint:lint-gradle:32.4.1` is missing from the Gradle cache.
 - **Gradle dependency verification** (`gradle/verification-metadata.xml`) is **not adopted**
   in this repository. The build resolves from the local cache with `--offline`, and pinning
   the engine by SHA-256 in `core-release.lock.json` is what protects the native half. This is
@@ -67,4 +67,4 @@ task of the build and without it `connectedDebugAndroidTest` is, exactly as befo
   (`DEC-07`) and no `assetlinks.json` has been published. No `ACTION_VIEW` filter is
   declared, so the application is not a web-link handler.
 - **Sharing is off** (`A20`): see `docs/sharing.md`. Importing is unaffected.
-- **One ABI** is published (`arm64-v8a`; `DEC-10`), and `minSdk` is 29.
+- **Two ABIs** are published in the required order (`arm64-v8a`, `x86_64`), and `minSdk` is 29.

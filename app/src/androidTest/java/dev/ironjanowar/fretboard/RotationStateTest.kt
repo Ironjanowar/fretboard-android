@@ -41,10 +41,7 @@ import org.junit.runner.RunWith
  * where the session lived in `remember` (the recreated composition comes back
  * empty) and passes only while the session is held outside the composition.
  *
- * **It has not been run.** The build environment has no emulator (`/dev/kvm` is
- * absent) and no device, so the arm64 engine cannot be loaded here; the test is
- * written, compiled and left for a machine with a device, exactly like the
- * plan's `TuningSheetTest`, `FrettedTouchTest` and `AnalysisCardsTest`.
+ * It runs with the x86_64 engine on the API 37 emulator.
  */
 @RunWith(AndroidJUnit4::class)
 class RotationStateTest {
@@ -118,6 +115,9 @@ class RotationStateTest {
     fun theKeyboardsMarkedKeysSurviveRotatingAndRotatingBack() {
         awaitSession()
 
+        // A preceding device test may have persisted the analyzer tab. Return to
+        // the visualizer explicitly so this test owns its starting surface.
+        compose.onNodeWithTag("tab-visualizer").performClick()
         compose.onNodeWithTag("instrument-anchor").performClick()
         compose.onNodeWithTag("instrument-option-PIANO").performClick()
         awaitTag("keyboard-surface")

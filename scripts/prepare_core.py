@@ -28,7 +28,7 @@ LOCK_PATH = REPO_ROOT / "core-release.lock.json"
 # The payload is a local Maven repository, so the build resolves the artifact as
 # a normal module dependency (`dev.ironjanowar:fretboard-engine:<version>`).
 PAYLOAD_DIR = REPO_ROOT / "engine" / "maven" / "dev" / "ironjanowar" / "fretboard-engine"
-NATIVE_LIBRARY = "jni/arm64-v8a/libfretboard_mobile_ffi.so"
+SUPPORTED_ABIS = ["arm64-v8a", "x86_64"]
 EMBEDDED_METADATA = "META-INF/fretboard-engine/metadata.json"
 
 
@@ -55,10 +55,14 @@ def read_lock(report: Report) -> dict | None:
         report.reject(f"core-release.lock.json cannot be read: {error}")
         return None
 
-    for field in ("artifact_version", "sha256", "abi", "uniffi_runtime_dependency", "source_commit"):
+    for field in ("artifact_version", "sha256", "uniffi_runtime_dependency", "source_commit"):
         value = lock.get(field)
         if not isinstance(value, str) or not value or value.lower() in {"todo", "tbd", "placeholder", "latest"}:
             report.reject(f"core-release.lock.json has no usable {field!r}")
+    if lock.get("abis") != SUPPORTED_ABIS:
+        report.reject(
+            f"core-release.lock.json 'abis' must be exactly {SUPPORTED_ABIS!r}"
+        )
     digest = lock.get("sha256", "")
     if not (len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)):
         report.reject("core-release.lock.json sha256 must be 64 lowercase hex characters")
@@ -85,8 +89,22 @@ def check_payload(path: Path, lock: dict, report: Report) -> None:
     try:
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
-            if NATIVE_LIBRARY not in names:
-                report.reject(f"the artifact carries no {NATIVE_LIBRARY}")
+            native_abis = sorted({
+                name.split("/")[1]
+                for name in names
+                if len(name.split("/")) >= 3
+                and name.startswith("jni/")
+                and name.endswith(".so")
+            })
+            if native_abis != sorted(SUPPORTED_ABIS):
+                report.reject(
+                    f"the artifact native ABIs are {native_abis!r}, "
+                    f"expected exactly {SUPPORTED_ABIS!r}"
+                )
+            for abi in SUPPORTED_ABIS:
+                native_library = f"jni/{abi}/libfretboard_mobile_ffi.so"
+                if native_library not in names:
+                    report.reject(f"the artifact carries no {native_library}")
             if EMBEDDED_METADATA not in names:
                 report.reject(f"the artifact carries no {EMBEDDED_METADATA}")
                 return
@@ -105,9 +123,10 @@ def check_payload(path: Path, lock: dict, report: Report) -> None:
                 f"the artifact metadata {field!r} is {metadata.get(field)!r}, "
                 f"the lock says {expected!r}"
             )
-    if lock["abi"] not in metadata.get("abis", []):
+    if metadata.get("abis") != lock["abis"]:
         report.reject(
-            f"the artifact does not declare the locked ABI {lock['abi']!r}"
+            f"the artifact metadata 'abis' is {metadata.get('abis')!r}, "
+            f"the lock says {lock['abis']!r}"
         )
 
 
@@ -164,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = Report()
     lock = read_lock(report)
-    if lock is None:
+    if lock is None or report.problems:
         return report.emit()
 
     version = lock["artifact_version"]

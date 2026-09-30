@@ -35,8 +35,8 @@ What that leaves in its place, and why nothing is lost:
 * the release path is the one this repository actually uses — a signed APK built and verified
   on the machine that holds the signing material, which a PR-triggered workflow could never
   do anyway (it must not receive signing secrets);
-* the checks that need a device were never going to run in CI here either: the engine
-  publishes only `arm64-v8a` (`DEC-10`), so an x86_64 runner's emulator cannot load it.
+* the checks that need an Android runtime remain a manual release step because this project
+  has no CI workflow; the dual-ABI engine now allows them to run on an x86_64 emulator.
 
 The rest of `A22` stands: the two guardrails, their RED cases and the checklist are merged.
 
@@ -62,41 +62,31 @@ HTTPS origin/path for release sharing. Do not ship an example hostname."*
 `ACTION_SEND` text), where an unknown or unsupported origin is a refusal with an
 English sentence rather than a configured allowlist decision.
 
-## P7 needs a decision on ABIs
+## Resolved: P7 uses two ABIs
 
-**Open:** the plan's P7 gate asks for the artifact and the APK to be checked for both
-ABIs (`arm64-v8a` and `x86_64`, the latter for emulators). This project ships, pins and
-delivers **`arm64-v8a` only** (DEC-10, `minSdk 29`).
+The artifact lock and application package require both ABIs in one fixed order:
+`arm64-v8a`, then `x86_64`. The first remains the physical-device target and the second
+enables the emulator verification path. The minimum SDK remains 29.
 
-**Why:** the pinned toolchain and the delivered artifacts were approved with one ABI;
-adding `x86_64` is a real change to the AAR build, the artifact metadata and the lock,
-not a checkbox.
+The AAR, its embedded metadata, `core-release.lock.json`, and `ndk.abiFilters` must agree;
+`scripts/prepare_core.py` rejects a missing, reordered, or additional ABI and rejects either
+missing native library.
 
-**Blocks:** the P7 acceptance record, which must either cite an approved
-single-ABI limitation or gain the second ABI.
+## Resolved: instrumented tests run on API 37 x86_64
 
-## Instrumented tests have never run
-
-**Open:** every device-side test in this repository is written and compiled but
-**not executed**: `RotationStateTest`, `KeyProgressionUiTest`,
-`LastSessionDeviceTest`, and whatever A19+ adds.
-
-**Why:** this environment has no device and no emulator (`/dev/kvm` is absent), and
-the engine is `arm64-v8a` only, so a host JVM cannot load it either.
-
-**Consequence:** the P5, P6 and P7 gates that ask for device evidence are open. An
-APK has been delivered for a manual pass at each step, and device-only defects have
-been found that way (the keys panel's self-recursive port, the edge-to-edge overlap),
-which is exactly the class of defect no host test here can see.
+The complete device-side suite (`RotationStateTest`, `KeyProgressionUiTest`, and
+`LastSessionDeviceTest`) passes 21/21 on the persistent API 37 x86_64 AVD. This closes the
+P5, P6 and P7 device-evidence gate for the debug variant. Release-variant instrumentation
+still requires the real release signing material.
 
 ## `:app:lintDebug` cannot run offline
 
-**Open:** the aggregate lint task fails offline because the pre-existing
-`androidTest` dependency `androidx.compose.ui:ui-test-junit4` pulls
-`androidx.test.espresso:3.5.0`, which is not in the offline Gradle cache.
+**Open:** the aggregate lint task fails offline because
+`com.android.tools.lint:lint-gradle:32.4.1` is not in the offline Gradle cache.
 
-**Why:** it predates this work; fixing it means either network access to resolve the
-missing artifacts or a reviewed change to `gradle/verification-metadata.xml`.
+**Why:** fixing it requires network access to resolve the missing lint artifact or a reviewed
+change to `gradle/verification-metadata.xml`. Espresso 3.7.0 is present and the complete
+instrumented suite runs successfully.
 
 **Not blocked:** `:app:lintAnalyzeDebug` (main sources only) runs and is clean.
 

@@ -21,19 +21,17 @@ android {
         applicationId = "dev.ironjanowar.fretboard"
         minSdk = 29
         targetSdk = 37
-        versionCode = 16
-        versionName = "0.8.3"
+        versionCode = 17
+        versionName = "0.8.4"
 
-        // The engine artifact ships one ABI (arm64-v8a, DEC-10), so the
-        // application declares only that: an APK carrying native libraries it
-        // cannot load would be larger without being more useful.
+        // The application and the pinned engine expose the same two ABIs: one
+        // for physical devices and one for the emulator verification path.
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
-        // The instrumented suite (the rotation regression) runs on a device
-        // through the Android JUnit runner; there is no emulator in the build
-        // environment, so it compiles here and runs where a device exists.
+        // The instrumented suite runs through the Android JUnit runner on a
+        // physical device or the x86_64 emulator.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -96,11 +94,19 @@ dependencies {
     // late answer cannot replace a newer one.
     testImplementation(libs.kotlinx.coroutines.test)
 
+    // Provides ComponentActivity for createComposeRule() in device-side
+    // composable tests without adding a test activity to the release manifest.
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
     // The device-side regression test: ActivityScenario.recreate() with the
     // Compose test rule. Test-only dependencies; nothing here reaches the APK.
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    // Compose's test artifact can resolve an older Espresso transitively. Pin
+    // 3.7 explicitly because older input injection reflects on an API removed
+    // from current Android releases.
+    androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

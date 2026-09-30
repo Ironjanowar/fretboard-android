@@ -3,6 +3,7 @@ package dev.ironjanowar.fretboard.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -44,10 +45,7 @@ import org.junit.Test
  * toggle, shows a keyless group and the full multi-key membership, and keeps
  * pending, empty, failed and Retry distinct.
  *
- * **It has not been run.** The build environment has no emulator (`/dev/kvm` is
- * absent) and no device, so this suite is written and compiled and left for a
- * machine with a device, exactly like the plan's `TuningSheetTest`,
- * `FrettedTouchTest` and `AnalysisCardsTest`. The plan names four androidTest
+ * The suite runs on the API 37 x86_64 emulator. The plan names four androidTest
  * files for P5 (`KeyProgressionUiTest`, `RelativeModesTest`,
  * `MultiKeyMembershipTest`, `EvaluationStateUiTest`); they are consolidated into
  * this one file because they share the same scripted fixtures and the same
@@ -178,7 +176,7 @@ class KeyProgressionUiTest {
         // The catalog is a dropdown: open it, then pick the engine's own entry.
         compose.onNodeWithTag("progression-anchor").performClick()
         compose.onNodeWithTag("progression-option-pop_i_v_vi_iv").assertIsDisplayed()
-        compose.onNodeWithText("I–V–vi–IV").performClick()
+        compose.onNodeWithTag("progression-option-pop_i_v_vi_iv").performClick()
 
         assertEquals("pop_i_v_vi_iv", selected)
     }
@@ -244,7 +242,7 @@ class KeyProgressionUiTest {
         // The prominent pair is always drawn, with the engine's own score.
         compose.onNodeWithTag("key-suggestion-C-major").assertIsDisplayed()
         compose.onNodeWithTag("key-suggestion-A-minor").assertIsDisplayed()
-        compose.onNodeWithText("2/2").assertIsDisplayed()
+        compose.onNodeWithTag("key-suggestion-C-major").assertTextContains("2/2")
         // The other modes are behind the shared toggle while collapsed.
         compose.onNodeWithTag("key-suggestion-D-dorian").assertDoesNotExist()
 
