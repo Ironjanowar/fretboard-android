@@ -12,6 +12,10 @@ android {
     namespace = "dev.ironjanowar.fretboard.engine"
     compileSdk = 37
 
+    // The same switch as the application's, so a release verification can run this module's
+    // device tests against the release variant too (task `A24`).
+    testBuildType = (findProperty("testBuildType") as String?) ?: "debug"
+
     defaultConfig {
         minSdk = 29
     }
