@@ -145,7 +145,7 @@ fun VisualizerScreen(
                     .testTag("fretboard-surface"),
             )
             Text(
-                text = "Swipe the board sideways: the open string and every fret up to $lastFret.",
+                text = "Swipe the frets sideways up to $lastFret; the tuning notes stay fixed.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(horizontal = 16.dp),

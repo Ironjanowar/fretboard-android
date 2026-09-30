@@ -97,12 +97,17 @@ fun KeySuggestionsPanel(
                     )
                     state.value.forEachIndexed { index, row ->
                         when (row) {
-                            is KeyRowDto.Single -> KeySuggestionCard(
-                                suggestion = row.item,
-                                tag = "key-row-single-$index-${row.item.tonic}-${row.item.scale}",
-                                enabled = enabled,
-                                onApply = onApplySuggestion,
-                            )
+                            is KeyRowDto.Single -> Column(
+                                modifier = Modifier.testTag(
+                                    "key-row-single-$index-${row.item.tonic}-${row.item.scale}",
+                                ),
+                            ) {
+                                KeySuggestionCard(
+                                    suggestion = row.item,
+                                    enabled = enabled,
+                                    onApply = onApplySuggestion,
+                                )
+                            }
 
                             is KeyRowDto.Group -> KeyGroupCard(
                                 group = row,

@@ -3,10 +3,12 @@ package dev.ironjanowar.fretboard.ui.surface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -42,7 +45,6 @@ import dev.ironjanowar.fretboard.core.SurfaceRowDto
 /** The fretboard's own colours: a dark timber board with pale hardware. */
 object BoardColors {
     val board = Color(0xFF3E2723)
-    val openTint = Color(0xFF4E342E)
     val nut = Color(0xFFF5F5F5)
     val wire = Color(0xFF8D6E63)
     val marker = Color(0xFFBCAAA4)
@@ -51,36 +53,19 @@ object BoardColors {
 
     /** The analyzer's selection marker: cyan, the palette's first colour. */
     val selection = Color(0xFF4FC3F7)
-
-    /** A note the engine painted nothing for is still readable, never invisible. */
-    val unstruckNote = Color(0x59FFFFFF)
 }
 
 /**
  * The fretted surface.
  *
- * One row per physical string and one position per fret from the open string to
- * the instrument's last fret. The engine supplies the note and the fill of every
- * position; the client supplies the geometry and the palette.
+ * Tuning notes stay fixed to the left of the wooden board while the stopped
+ * frets and their number header share one horizontal scroll position. The
+ * engine supplies notes and chord paint; this composable only decides which of
+ * those notes the current presentation mode makes visible.
  *
- * The engine's rows are in physical string order (row 0 is the instrument's own
- * first string — its lowest-pitched one for a non-reentrant tuning, its G string
- * for a ukulele). A real fretboard diagram draws that first string at the
- * **bottom**, which is what the pinned web surface does (`string_lines/1`:
- * `visual_row = string_count - 1 - string_index`), so the rows are reversed for
- * drawing and the string lines get thicker towards the bottom.
- *
- * The open column is wider than the stopped columns and tinted, and the nut is
- * drawn on the boundary between it and fret 1, so the open string is never
- * mistaken for fret 1. Everything is scrollable horizontally: 25 positions do
- * not fit a phone, and shrinking them would be worse than scrolling.
- *
- * The visualizer is informative, so it passes no [onPositionTap] and the board
- * is not a control. The analyzer passes one, and then the whole board is one
- * half-open grid of [SurfaceInput] cells: a tap that lands outside every cell
- * does nothing, a scroll cancels the pending tap, and a tap marks its cell on
- * release. [marked] is the engine's committed selection; [paintChords] is off on
- * the analyzer so the visualizer's chords never colour the analyzer's marks.
+ * Engine rows are reversed for drawing, so its first physical string is at the
+ * bottom. In analyzer mode every cell remains a full-size accessible control;
+ * only its visible note label is conditional on selection.
  */
 @Composable
 fun FretboardSurface(
@@ -92,21 +77,19 @@ fun FretboardSurface(
     onPositionTap: ((PositionDto) -> Unit)? = null,
 ) {
     val scrollState = rememberScrollState()
-    val stringCount = surface.rows.size
+    val rows = surface.rows.reversed()
+    val stringCount = rows.size
+    val boardHeight = FretboardGeometry.boardHeightDp(stringCount).dp
     val density = LocalDensity.current.density
-    // The gesture block below outlives a recomposition (it only restarts when its
-    // keys change), so the callback is read through the updated state: a tap
-    // always sends its position to the handler of the *current* session, never to
-    // one captured when the gesture was first installed.
     val currentTap by rememberUpdatedState(onPositionTap)
-    val taps = if (onPositionTap == null) {
+    val boardTaps = if (onPositionTap == null) {
         Modifier
     } else {
         Modifier.pointerInput(lastFret, stringCount) {
             detectTapGestures { offset ->
                 SurfaceInput.positionAt(
-                    xDp = offset.x / density,
-                    yDp = offset.y / density,
+                    xDp = offset.x / density + FretboardGeometry.OPEN_CELL_WIDTH_DP,
+                    yDp = offset.y / density + FretboardGeometry.HEADER_HEIGHT_DP,
                     lastFret = lastFret,
                     stringCount = stringCount,
                 )?.let { position -> currentTap?.invoke(position) }
@@ -114,46 +97,198 @@ fun FretboardSurface(
         }
     }
 
-    Column(
-        modifier
-            .horizontalScroll(scrollState)
-            .then(taps)
-            .background(BoardColors.board),
-    ) {
-        FretNumberHeader(lastFret)
-        MarkerStrip(lastFret)
-        val rows = surface.rows.reversed()
-        rows.forEachIndexed { visualIndex, row ->
-            StringRow(
-                row = row,
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth()) {
+            Box(
+                Modifier
+                    .width(FretboardGeometry.OPEN_CELL_WIDTH_DP.dp)
+                    .height(FretboardGeometry.HEADER_HEIGHT_DP.dp),
+            )
+            FretNumberHeader(
                 lastFret = lastFret,
-                visualIndex = visualIndex,
-                stringIndex = stringCount - 1 - visualIndex,
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(scrollState, enabled = false),
+            )
+        }
+        Row(Modifier.fillMaxWidth()) {
+            TuningNotes(
+                rows = rows,
                 stringCount = stringCount,
                 marked = marked,
-                paintChords = paintChords,
+                onPositionTap = onPositionTap,
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(boardHeight)
+                    .horizontalScroll(scrollState)
+                    .testTag("fretboard-board")
+                    .background(BoardColors.board),
+            ) {
+                Board(
+                    rows = rows,
+                    lastFret = lastFret,
+                    stringCount = stringCount,
+                    marked = marked,
+                    paintChords = paintChords,
+                    onPositionTap = onPositionTap,
+                    modifier = boardTaps,
+                )
+            }
+        }
+    }
+}
+
+/** The fret numbers, aligned above the stopped columns. */
+@Composable
+private fun FretNumberHeader(lastFret: Int, modifier: Modifier = Modifier) {
+    Row(modifier.height(FretboardGeometry.HEADER_HEIGHT_DP.dp)) {
+        for (fret in 1..lastFret) {
+            Box(
+                modifier = Modifier
+                    .width(FretboardGeometry.CELL_WIDTH_DP.dp)
+                    .fillMaxHeight()
+                    .testTag("fret-number-$fret"),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = fret.toString(),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+/** Fixed open-string labels, one per physical string. */
+@Composable
+private fun TuningNotes(
+    rows: List<SurfaceRowDto>,
+    stringCount: Int,
+    marked: Map<Int, Int>,
+    onPositionTap: ((PositionDto) -> Unit)?,
+) {
+    Column(Modifier.width(FretboardGeometry.OPEN_CELL_WIDTH_DP.dp)) {
+        rows.forEachIndexed { visualIndex, row ->
+            val stringIndex = stringCount - 1 - visualIndex
+            TuningNote(
+                cell = row.cells.firstOrNull { it.fret.toInt() == 0 },
+                stringIndex = stringIndex,
+                stringCount = stringCount,
+                marked = marked[stringIndex] == 0,
                 onPositionTap = onPositionTap,
             )
         }
     }
 }
 
-/** The fret numbers, one per stopped column (the open column carries none). */
+/** One always-visible tuning note; in analyzer mode it is the fret-zero control. */
 @Composable
-private fun FretNumberHeader(lastFret: Int) {
-    Row(Modifier.height(FretboardGeometry.HEADER_HEIGHT_DP.dp)) {
-        for (fret in 0..lastFret) {
-            Box(
+private fun TuningNote(
+    cell: SurfaceCellDto?,
+    stringIndex: Int,
+    stringCount: Int,
+    marked: Boolean,
+    onPositionTap: ((PositionDto) -> Unit)?,
+) {
+    val note = cell?.note.orEmpty()
+    val position = positionOf(stringIndex, 0)
+    val label = positionLabel(stringIndex, stringCount, 0, note)
+    val input = if (onPositionTap == null) {
+        Modifier.semantics { contentDescription = label }
+    } else {
+        Modifier
+            .pointerInput(stringIndex, onPositionTap) {
+                detectTapGestures { onPositionTap(position) }
+            }
+            .semantics {
+                contentDescription = label
+                selected = marked
+                role = Role.Button
+                onClick(label) {
+                    onPositionTap(position)
+                    true
+                }
+            }
+    }
+    Box(
+        modifier = Modifier
+            .width(FretboardGeometry.OPEN_CELL_WIDTH_DP.dp)
+            .height(FretboardGeometry.ROW_HEIGHT_DP.dp)
+            .testTag("tuning-note-$stringIndex")
+            .then(input)
+            .drawBehind {
+                if (marked) {
+                    drawCircle(
+                        color = BoardColors.selection,
+                        radius = 17.dp.toPx(),
+                        center = Offset(size.width / 2f, size.height / 2f),
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = note,
+            color = if (marked) BoardColors.ink else MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+        )
+    }
+}
+
+/** The wooden stopped-fret area, including inlays and string rows. */
+@Composable
+private fun Board(
+    rows: List<SurfaceRowDto>,
+    lastFret: Int,
+    stringCount: Int,
+    marked: Map<Int, Int>,
+    paintChords: Boolean,
+    onPositionTap: ((PositionDto) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier) {
+        InlayMarkers(lastFret, stringCount)
+        Column {
+            rows.forEachIndexed { visualIndex, row ->
+                StringRow(
+                    row = row,
+                    lastFret = lastFret,
+                    visualIndex = visualIndex,
+                    stringIndex = stringCount - 1 - visualIndex,
+                    stringCount = stringCount,
+                    marked = marked,
+                    paintChords = paintChords,
+                    onPositionTap = onPositionTap,
+                )
+            }
+        }
+    }
+}
+
+/** Inlay dots occupy the board itself rather than a separate vertical strip. */
+@Composable
+private fun InlayMarkers(lastFret: Int, stringCount: Int) {
+    val boardHeight = FretboardGeometry.boardHeightDp(stringCount).dp
+    Row(Modifier.height(boardHeight)) {
+        for (fret in 1..lastFret) {
+            val dots = markerCount(fret)
+            Column(
                 modifier = Modifier
-                    .width(FretboardGeometry.columnWidthDp(fret).dp)
-                    .fillMaxHeight(),
-                contentAlignment = Alignment.Center,
+                    .width(FretboardGeometry.CELL_WIDTH_DP.dp)
+                    .height(boardHeight),
+                verticalArrangement = Arrangement.SpaceEvenly,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                if (!FretboardGeometry.isOpenColumn(fret)) {
-                    Text(
-                        text = fret.toString(),
-                        color = Color(0xFFFFF3E0),
-                        style = MaterialTheme.typography.labelMedium,
+                repeat(dots) {
+                    Box(
+                        Modifier
+                            .size(7.dp)
+                            .background(BoardColors.marker, CircleShape)
+                            .testTag("inlay-marker-$fret"),
                     )
                 }
             }
@@ -161,37 +296,13 @@ private fun FretNumberHeader(lastFret: Int) {
     }
 }
 
-/** The inlay markers: one dot on most marked frets, two on 12 and 24. */
-@Composable
-private fun MarkerStrip(lastFret: Int) {
-    Row(Modifier.height(FretboardGeometry.MARKER_HEIGHT_DP.dp)) {
-        for (fret in 0..lastFret) {
-            val dots = when {
-                FretboardGeometry.hasDoubleMarker(fret) -> 2
-                FretboardGeometry.hasMarker(fret) -> 1
-                else -> 0
-            }
-            Box(
-                modifier = Modifier
-                    .width(FretboardGeometry.columnWidthDp(fret).dp)
-                    .fillMaxHeight(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row {
-                    repeat(dots) {
-                        Box(
-                            Modifier
-                                .size(7.dp)
-                                .background(BoardColors.marker, CircleShape),
-                        )
-                    }
-                }
-            }
-        }
-    }
+private fun markerCount(fret: Int): Int = when {
+    FretboardGeometry.hasDoubleMarker(fret) -> 2
+    FretboardGeometry.hasMarker(fret) -> 1
+    else -> 0
 }
 
-/** One string: its line, and every position from the open string to the last fret. */
+/** One string and every stopped position up to the last fret. */
 @Composable
 private fun StringRow(
     row: SurfaceRowDto,
@@ -204,8 +315,6 @@ private fun StringRow(
     onPositionTap: ((PositionDto) -> Unit)?,
 ) {
     val cellsByFret = row.cells.associateBy { it.fret.toInt() }
-    // Thicker towards the bottom, as the pinned web surface draws them
-    // (`stroke-width = 1.5 + s * 0.3` for visual row `s` from the top).
     val strokeDp = 1.5f + visualIndex * 0.3f
     Row(
         modifier = Modifier
@@ -221,7 +330,7 @@ private fun StringRow(
                 )
             },
     ) {
-        for (fret in 0..lastFret) {
+        for (fret in 1..lastFret) {
             PositionCell(
                 cell = cellsByFret[fret],
                 fret = fret,
@@ -235,7 +344,7 @@ private fun StringRow(
     }
 }
 
-/** One position: the engine's note, painted with the engine's fill. */
+/** One stopped position, showing a note only when the current mode calls for it. */
 @Composable
 private fun PositionCell(
     cell: SurfaceCellDto?,
@@ -256,13 +365,8 @@ private fun PositionCell(
         is NotePaint.Overlap -> Color(paint.argb)
         NotePaint.None -> null
     }
-    val note = cell?.note ?: ""
-    val label = positionLabel(
-        stringIndex = stringIndex,
-        stringCount = stringCount,
-        fret = fret,
-        note = note,
-    )
+    val note = cell?.note.orEmpty()
+    val label = positionLabel(stringIndex, stringCount, fret, note)
     val semantics = if (onPositionTap == null) {
         Modifier.semantics { contentDescription = label }
     } else {
@@ -278,19 +382,19 @@ private fun PositionCell(
     }
     Box(
         modifier = Modifier
-            .width(FretboardGeometry.columnWidthDp(fret).dp)
+            .width(FretboardGeometry.CELL_WIDTH_DP.dp)
             .fillMaxHeight()
             .then(semantics)
             .drawBehind {
-                when {
-                    // The nut: the boundary between the open column and fret 1.
-                    fret == 1 -> drawLine(
+                if (fret == 1) {
+                    drawLine(
                         color = BoardColors.nut,
                         start = Offset(0f, 0f),
                         end = Offset(0f, size.height),
                         strokeWidth = FretboardGeometry.NUT_WIDTH_DP.dp.toPx(),
                     )
-                    fret > 1 -> drawLine(
+                } else {
+                    drawLine(
                         color = BoardColors.wire,
                         start = Offset(0f, 0f),
                         end = Offset(0f, size.height),
@@ -298,21 +402,13 @@ private fun PositionCell(
                     )
                 }
                 if (marked) {
-                    // The analyzer's own mark: a cyan ring, independent of any
-                    // chord colour, and never conveyed by colour alone — the
-                    // cell's semantics carry the selected state.
-                    val radius = size.minDimension / 2f - 2.dp.toPx()
                     drawCircle(
                         color = BoardColors.selection,
-                        radius = radius,
+                        radius = 17.dp.toPx(),
                         center = Offset(size.width / 2f, size.height / 2f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(
-                            width = 3.dp.toPx(),
-                        ),
                     )
                 }
-            }
-            .background(if (FretboardGeometry.isOpenColumn(fret)) BoardColors.openTint else Color.Transparent),
+            },
         contentAlignment = Alignment.Center,
     ) {
         if (fillColor != null) {
@@ -322,12 +418,14 @@ private fun PositionCell(
                     .background(fillColor, CircleShape),
             )
         }
-        Text(
-            text = note,
-            color = if (fillColor != null) BoardColors.ink else BoardColors.unstruckNote,
-            fontWeight = if (fillColor != null) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-        )
+        if ((paintChords && fillColor != null) || (!paintChords && marked)) {
+            Text(
+                text = note,
+                color = BoardColors.ink,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+            )
+        }
     }
 }
 

@@ -32,7 +32,7 @@ corpus itself rather than asserted.
 codec, the reducer, the catalogs, the analyzer, keys, progressions and the transport are all
 tested against these cases, and the contract revisions record which surface they cover.
 
-**In this client**, 224 JVM tests and 21 instrumented tests. What they pin is the *client's*
+**In this client**, 229 JVM tests and 21 instrumented tests. What they pin is the *client's*
 own behaviour, with the engine scripted — no musical value is computed here, so a JVM test can
 only assert about the answer it was handed:
 
@@ -43,7 +43,7 @@ only assert about the answer it was handed:
 | Session holder, drafts, tuning edits, keys and progressions | 83 |
 | Surfaces, geometry, palette, cards, analysis model, chord preview | 57 |
 | Engine wiring and failure reporting | 6 |
-| Instrumented (compiled, **never executed** here) | 21 |
+| Instrumented (passing on API 37 x86_64) | 21 |
 
 ## Unmapped rows — the gap this matrix exists to show
 
@@ -72,5 +72,5 @@ code under test:
 
 - `FakeNativeBindings`-style calculation is not a source of expectations: a test that computes
   its own expected value from the code under test would make this matrix meaningless.
-- The instrumented tests are not evidence here: they compile, and they have never run (no
-  device, no `/dev/kvm`). Any claim that depends on them is a claim about compilation.
+- The instrumented tests provide client-side device evidence on the API 37 x86_64 AVD. They
+  still do not replace corpus replay for musical-domain expectations owned by the core.

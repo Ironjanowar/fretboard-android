@@ -26,9 +26,7 @@ import java.io.File
  * music are two different Kotlin values. The envelope is what the engine says about
  * them, and it is what identity means here.
  *
- * **It has not been run.** The build environment has no device and no emulator
- * (`/dev/kvm` is absent), so this test is written, compiled and left for a machine
- * with a device — the same standing as `RotationStateTest` and `KeyProgressionUiTest`.
+ * It runs on the API 37 x86_64 emulator as part of the connected suite.
  */
 @RunWith(AndroidJUnit4::class)
 class LastSessionDeviceTest {
@@ -40,12 +38,13 @@ class LastSessionDeviceTest {
         )
 
     @Test
-    fun `the pinned engine's snapshot round-trips through the store`() = runBlocking {
-        directory.mkdirs()
-        File(directory, LAST_SESSION_FILE).delete()
-        File(directory, REJECTED_SESSION_FILE).delete()
-        val store = lastSessionStore(directory)
-        val page = defaultState()
+    fun pinned_engine_snapshot_round_trips_through_the_store() {
+        runBlocking {
+            directory.mkdirs()
+            File(directory, LAST_SESSION_FILE).delete()
+            File(directory, REJECTED_SESSION_FILE).delete()
+            val store = lastSessionStore(directory)
+            val page = defaultState()
 
         assertEquals(StoreOutcome.Written, store.write(1, page))
 
@@ -79,6 +78,7 @@ class LastSessionDeviceTest {
             (store.read() as StoredSession.Restored).envelope,
         )
 
-        File(directory, LAST_SESSION_FILE).delete()
+            File(directory, LAST_SESSION_FILE).delete()
+        }
     }
 }

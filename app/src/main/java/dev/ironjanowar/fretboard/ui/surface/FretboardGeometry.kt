@@ -28,9 +28,6 @@ object FretboardGeometry {
     /** Height of the fret-number header above the first string. */
     const val HEADER_HEIGHT_DP: Float = 26f
 
-    /** Height of the inlay-marker strip under the header. */
-    const val MARKER_HEIGHT_DP: Float = 14f
-
     /** Stroke width of the nut, at the open column's right edge. */
     const val NUT_WIDTH_DP: Float = 8f
 
@@ -61,6 +58,9 @@ object FretboardGeometry {
 
     /** Total scrollable width of a surface whose last fret is [lastFret]. */
     fun surfaceWidthDp(lastFret: Int): Float = columnLeftDp(lastFret) + columnWidthDp(lastFret)
+
+    /** Total height of the wooden board for [stringCount] string rows. */
+    fun boardHeightDp(stringCount: Int): Float = stringCount * ROW_HEIGHT_DP
 
     /** True for the open-string column, which is not a fret. */
     fun isOpenColumn(fret: Int): Boolean = fret == 0

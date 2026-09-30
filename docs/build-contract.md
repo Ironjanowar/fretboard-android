@@ -15,7 +15,7 @@ Everything here is either pinned and verified, or explicitly out of scope.
 | minSdk | 29 | `app/build.gradle.kts` (DEC-10's floor) |
 | Compose BOM | 2026.09.00 | `libs.versions.toml` (`composeBom`) |
 | JNA (UniFFI Kotlin runtime) | 5.17.0 | the engine artifact's recorded dependency; `engine/build.gradle.kts` |
-| ABI | `arm64-v8a` | `ndk.abiFilters` and `core-release.lock.json` |
+| ABIs | `arm64-v8a`, `x86_64` (in that order) | `ndk.abiFilters` and `core-release.lock.json` |
 
 AGP 9 applies Kotlin itself: adding `org.jetbrains.kotlin.android` fails the
 build with an explicit message. The Compose compiler plugin
@@ -26,9 +26,9 @@ is per-variant (`testDebugUnitTest`).
 
 The application never builds the core. It consumes one AAR:
 
-* coordinates: `dev.ironjanowar:fretboard-engine:0.2.0`
+* coordinates: `dev.ironjanowar:fretboard-engine:0.8.0`
 * identity: `core-release.lock.json` (`sha256`, `source_commit`,
-  `uniffi_runtime_dependency`, `abi`)
+  `uniffi_runtime_dependency`, ordered `abis`)
 * installation: `scripts/prepare_core.py` verifies the digest and the embedded
   metadata against the lock, then installs the artifact (and a generated POM
   carrying the JNA runtime dependency) into the local Maven repository
@@ -72,9 +72,9 @@ the binding's `ByteArray` pitches).
 
 ## Out of scope for the P1 build
 
-* No device or emulator was available, so the APK's *runtime* behaviour is not
-  verified here: it is verified structurally (signature, package, ABI, native
-  library, binding classes) and the user installs it to test behaviour.
+* This historical P1 build did not run on an Android runtime. It was verified
+  structurally (signature, package, ABI, native library, binding classes), and
+  the user installed it to test behaviour.
 * No shrinking: `isMinifyEnabled = false`, because R8 rules for JNA and the
   generated bindings need their own verification task.
 * No persistence, no chord/scale pickers, no URL state: the milestone's screen is
@@ -108,9 +108,9 @@ palette and its wrap (slot rem palette length, from the frozen fixture
 1, fret 24 inside the surface, inlay markers), and the card model (positional
 note–interval pairing kept in the engine's order, slot lookup per occurrence).
 
-What this build does **not** verify: the app was never run — the environment has
-no emulator (`/dev/kvm` absent) and no device, so runtime behaviour is the user's
-manual check, exactly as in P1. Instrument changes, highlight toggling and the
+What this historical build does **not** verify: the app was not run, so runtime
+behaviour was the user's manual check, exactly as in P1. Instrument changes,
+highlight toggling and the
 reducer's duplicate rules run only in the engine's own tests plus the user's
 device, not in this repository's unit tests (they need the arm64 native library,
 which cannot load on the build host).
@@ -121,7 +121,7 @@ which cannot load on the build host).
   placeholder; the engine already answers `keyboardSurface`, the screens are P3
   and P4.
 * No tuning sheet, no key/progression sheets, no URL import or persistence.
-* No instrumented (`androidTest`) suite runs here: no emulator is available.
+* No instrumented (`androidTest`) suite was run for this historical build.
 * Shrinking is still off.
 
 ## Evidence of the P3 build (fretted analyzer and tuning drafts)
@@ -164,8 +164,8 @@ note–interval pairing (`Contract.D01`, the approved baseline zip) and the
 spelling of the inversion. Every musical value — pitches, preset labels, note
 names, bases, labels, missing tones — is the engine's, taken from its DTOs.
 
-What this build does **not** verify: the app was never run — no emulator
-(`/dev/kvm` absent) and no device, as in P1/P2. The reducer's own rules (a tap on
+What this historical build does **not** verify: the app was not run, as in
+P1/P2. The reducer's own rules (a tap on
 the same fret clears the mark, another fret replaces it, a preset commit, the
 fixed-reference nearest-pitch resolution) live in the engine and run in its own
 test suite and on the user's device; they cannot run on this host, where the
@@ -190,7 +190,7 @@ arm64 native library does not load.
   answer mapping are separated from the composables for the same reason
   `CardModel.kt` was in P2 — a JVM unit test cannot reach into a Composable, and
   these two carry the decisions that must be pinned.
-* No instrumented (`androidTest`) suite runs here: no emulator is available.
+* No instrumented (`androidTest`) suite was run for this historical build.
   `TuningSheetTest`, `FrettedTouchTest` and `AnalysisCardsTest` are the
   device-side tests the plan lists for P3 and none of them ran.
 * Shrinking is still off; no persistence, no URL import and no key/progression
@@ -262,8 +262,8 @@ by an exact factor of `2.4` (black 20 → 48dp), and the web's own black offsets
   engine's note with the engine's own pitch number (`Key C#, pitch 49`) rather
   than computing an octave. This is a boundary note for the core, not a musical
   answer computed here.
-* The app was never run: no emulator (`/dev/kvm` absent) and no device, exactly
-  as in P1–P3. The reducer's own rules (a piano tap adds or removes, an
+* The app was not run for this historical build, exactly as in P1–P3. The
+  reducer's own rules (a piano tap adds or removes, an
   out-of-range pitch is refused, crossing the boundary clears the selection and
   keeps the chords and the tab) live in the engine and run in its own test suite
   and on the user's device; they cannot run on this host, where the arm64 native
@@ -395,12 +395,11 @@ behavioural reason.
   `ActivityScenario.recreate()` with a session built through the engine (an
   instrument switch there and back, a stored chord, a marked position, a marked
   piano key, an open tuning draft with an unapplied edit) and asserts every part
-  of it afterwards. There is no emulator here (`/dev/kvm` absent) and no device,
-  so the arm64 engine cannot be loaded: the suite **compiles**
-  (`:app:compileDebugAndroidTestKotlin`) and was **not run**. It must be run where
-  a device exists — as must the P3/P4 device tests (`TuningSheetTest`,
-  `FrettedTouchTest`, `AnalysisCardsTest`, `PianoVisualizerTest`,
-  `PianoAnalyzerTouchTest`, `InstrumentBoundaryTest`).
+  of it afterwards. The 0.4.1 artifact was arm64-only, so that historical gate was
+  compile-only: the suite **compiled** (`:app:compileDebugAndroidTestKotlin`) and
+  was **not run**. That historical gap is now closed: with the current dual-ABI artifact,
+  the complete device suite passes 21/21 on the API 37 x86_64 AVD, including both
+  rotation/restore scenarios.
 * **The physical rotation is the user's manual check.** No test here turns a
   phone. The manual list: rotate to landscape, rotate back, and confirm the
   instrument, tuning, tab, marks, chords, highlight, pickers and an open draft

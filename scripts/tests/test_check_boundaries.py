@@ -6,6 +6,7 @@ whole checker against this repository, which is the guardrail that has to keep h
 """
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -111,6 +112,20 @@ class NoteTableTest(BoundaryRuleCase):
         )
 
         self.assertIn("kotlin-music-table", self.rules_fired())
+
+
+class AppPackagingContractTest(unittest.TestCase):
+    def test_application_declares_exactly_the_supported_abis(self) -> None:
+        repository = Path(__file__).resolve().parent.parent.parent
+        build_script = (repository / "app/build.gradle.kts").read_text()
+        ndk_block = re.search(r"\bndk\s*\{(?P<body>[^{}]*)\}", build_script)
+
+        self.assertIsNotNone(ndk_block, "app/build.gradle.kts must declare an ndk block")
+        assert ndk_block is not None
+        self.assertIn("abiFilters", ndk_block.group("body"))
+        declared_abis = re.findall(r'"([^"]+)"', ndk_block.group("body"))
+
+        self.assertCountEqual(["arm64-v8a", "x86_64"], declared_abis)
 
 
 class TheRepositoryItselfTest(unittest.TestCase):

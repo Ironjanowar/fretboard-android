@@ -23,32 +23,45 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import prepare_core  # noqa: E402
 
-NATIVE_LIBRARY = "jni/arm64-v8a/libfretboard_mobile_ffi.so"
+ABIS = ["arm64-v8a", "x86_64"]
+NATIVE_LIBRARIES = {
+    abi: f"jni/{abi}/libfretboard_mobile_ffi.so" for abi in ABIS
+}
 METADATA = "META-INF/fretboard-engine/metadata.json"
 
 LOCK = {
     "artifact_version": "0.1.0",
     "sha256": "0" * 64,
-    "abi": "arm64-v8a",
+    "abis": ABIS,
     "uniffi_runtime_dependency": "net.java.dev.jna:jna:5.17.0",
     "source_commit": "39f10d7cd766f3e9c0fcc5ed23164ec3e1be593d",
 }
 
 
-def build_artifact(directory: Path, lock: dict, *, native: bool = True, metadata: dict | None = None) -> Path:
+def build_artifact(
+    directory: Path,
+    lock: dict,
+    *,
+    native_abis: list[str] | None = None,
+    metadata: dict | None = None,
+    additional_entries: dict[str, bytes] | None = None,
+) -> Path:
     """Write an artifact shaped like the one the core repository publishes."""
     embedded = {
         "artifact_version": lock["artifact_version"],
         "source_commit": lock["source_commit"],
         "uniffi_runtime_dependency": lock["uniffi_runtime_dependency"],
-        "abis": [lock["abi"]],
+        "abis": lock["abis"],
     }
     embedded.update(metadata or {})
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
-        if native:
-            archive.writestr(NATIVE_LIBRARY, b"\x7fELF" + b"\x00" * 64)
+        for abi in lock["abis"] if native_abis is None else native_abis:
+            native_library = f"jni/{abi}/libfretboard_mobile_ffi.so"
+            archive.writestr(native_library, b"\x7fELF" + b"\x00" * 64)
+        for name, contents in (additional_entries or {}).items():
+            archive.writestr(name, contents)
         archive.writestr(METADATA, json.dumps(embedded, indent=2))
         archive.writestr("classes.jar", b"PK\x03\x04")
     payload = buffer.getvalue()
@@ -142,9 +155,32 @@ class LockTest(PrepareCoreTestCase):
         self.assertEqual(code, 1)
         self.assertIn("no usable 'source_commit'", errors)
 
+    def test_a_missing_abis_list_is_rejected(self) -> None:
+        del self.lock["abis"]
+        self.write_lock()
+        code, errors = self.run_script("--offline")
+        self.assertEqual(code, 1)
+        self.assertIn("'abis'", errors)
+
+    def test_an_invalid_abis_list_is_rejected(self) -> None:
+        invalid_values = (
+            "arm64-v8a",
+            [],
+            ["arm64-v8a"],
+            ["x86_64", "arm64-v8a"],
+            ["arm64-v8a", "x86_64", "armeabi-v7a"],
+        )
+        for invalid in invalid_values:
+            with self.subTest(abis=invalid):
+                self.lock["abis"] = invalid
+                self.write_lock()
+                code, errors = self.run_script("--offline")
+                self.assertEqual(code, 1)
+                self.assertIn("'abis'", errors)
+
 
 class InstallTest(PrepareCoreTestCase):
-    def test_a_verified_artifact_is_installed_as_a_local_repository(self) -> None:
+    def test_a_verified_dual_abi_artifact_is_installed_as_a_local_repository(self) -> None:
         source = self.artifact()
         code, errors = self.run_script("--from", str(source))
         self.assertEqual((code, errors), (0, ""))
@@ -168,17 +204,42 @@ class InstallTest(PrepareCoreTestCase):
         self.assertIn("does not match the lock", errors)
         self.assertEqual(self.installed(), [])
 
-    def test_an_artifact_without_the_native_library_is_rejected(self) -> None:
-        source = self.artifact(native=False)
+    def test_an_artifact_without_either_native_library_is_rejected(self) -> None:
+        for missing_abi in ABIS:
+            with self.subTest(missing_abi=missing_abi):
+                present_abis = [abi for abi in ABIS if abi != missing_abi]
+                source = self.artifact(native_abis=present_abis)
+                code, errors = self.run_script("--from", str(source))
+                self.assertEqual(code, 1)
+                self.assertIn(f"carries no {NATIVE_LIBRARIES[missing_abi]}", errors)
+
+    def test_an_artifact_with_an_additional_native_abi_is_rejected(self) -> None:
+        source = self.artifact(native_abis=[*ABIS, "armeabi-v7a"])
         code, errors = self.run_script("--from", str(source))
         self.assertEqual(code, 1)
-        self.assertIn("carries no jni/arm64-v8a/libfretboard_mobile_ffi.so", errors)
+        self.assertIn("native ABIs", errors)
+        self.assertIn("armeabi-v7a", errors)
+
+    def test_an_unrelated_library_under_an_additional_abi_is_rejected(self) -> None:
+        source = self.artifact(
+            additional_entries={"jni/armeabi-v7a/libunexpected.so": b"\x7fELF"},
+        )
+        code, errors = self.run_script("--from", str(source))
+        self.assertEqual(code, 1)
+        self.assertIn("native ABIs", errors)
+        self.assertIn("armeabi-v7a", errors)
 
     def test_metadata_that_disagrees_with_the_lock_is_rejected(self) -> None:
         source = self.artifact(metadata={"source_commit": "0" * 40})
         code, errors = self.run_script("--from", str(source))
         self.assertEqual(code, 1)
         self.assertIn("'source_commit' is", errors)
+
+    def test_metadata_with_different_abis_is_rejected(self) -> None:
+        source = self.artifact(metadata={"abis": ["arm64-v8a"]})
+        code, errors = self.run_script("--from", str(source))
+        self.assertEqual(code, 1)
+        self.assertIn("metadata 'abis'", errors)
 
     def test_a_missing_source_artifact_is_reported(self) -> None:
         code, errors = self.run_script("--from", str(self.root / "absent.aar"))
