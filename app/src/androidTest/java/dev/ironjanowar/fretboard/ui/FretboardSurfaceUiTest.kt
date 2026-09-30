@@ -36,6 +36,7 @@ import dev.ironjanowar.fretboard.core.SurfaceCellDto
 import dev.ironjanowar.fretboard.core.SurfaceRowDto
 import dev.ironjanowar.fretboard.ui.surface.BoardColors
 import dev.ironjanowar.fretboard.ui.surface.FretboardSurface
+import dev.ironjanowar.fretboard.ui.surface.SurfacePalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,27 +61,40 @@ class FretboardSurfaceUiTest {
 
     private val lastFret = 24
 
+    private data class PaintedCell(
+        val string: Int,
+        val fret: Int,
+        val memberships: List<ULong>,
+        val fill: NoteFillDto,
+    )
+
     private fun cell(
         string: Int,
         fret: Int,
-        painted: Boolean = false,
+        paint: PaintedCell? = null,
     ) = SurfaceCellDto(
         fret = fret.toUByte(),
         note = "S${string}F$fret",
-        memberships = if (painted) listOf(0uL) else emptyList(),
-        fill = if (painted) NoteFillDto.Slot(0uL) else NoteFillDto.Overlap,
+        memberships = paint?.memberships.orEmpty(),
+        fill = paint?.fill ?: NoteFillDto.Overlap,
     )
 
+    private fun singlePaint(string: Int, fret: Int, slot: ULong = 0uL) =
+        PaintedCell(string, fret, listOf(slot), NoteFillDto.Slot(slot))
+
+    private fun overlapPaint(string: Int, fret: Int) =
+        PaintedCell(string, fret, listOf(0uL, 1uL), NoteFillDto.Overlap)
+
     private fun surface(
-        vararg painted: Pair<Int, Int>,
+        vararg painted: PaintedCell,
         stringCount: Int = 2,
     ): FrettedSurfaceDto {
-        val active = painted.toSet()
+        val active = painted.associateBy { it.string to it.fret }
         return FrettedSurfaceDto(
             rows = (0 until stringCount).map { string ->
                 SurfaceRowDto(
                     cells = (0..lastFret).map { fret ->
-                        cell(string, fret, (string to fret) in active)
+                        cell(string, fret, active[string to fret])
                     },
                 )
             },
@@ -136,11 +150,52 @@ class FretboardSurfaceUiTest {
 
     @Test
     fun visualizerShowsOnlyStoppedLabelsWithActiveChordPaint() {
-        show(surface(0 to 3))
+        show(surface(singlePaint(0, 3)))
 
         compose.onNodeWithText("S0F3").assertExists()
         compose.onNodeWithText("S0F4").assertDoesNotExist()
         compose.onNodeWithText("S1F3").assertDoesNotExist()
+    }
+
+    @Test
+    fun visualizerOpenStringUsesTheSameSingleChordPaintAsAStoppedNote() {
+        val slot = 1uL
+        val expected = Color(SurfacePalette.colorForSlot(slot))
+        show(surface(singlePaint(0, 0, slot), singlePaint(0, 3, slot)))
+
+        assertStoppedPainted(string = 0, fret = 3, expected)
+        assertPainted("tuning-note-0", expected)
+    }
+
+    @Test
+    fun visualizerOpenStringUsesTheSameOverlapPaintAsAStoppedNote() {
+        val expected = Color(SurfacePalette.overlapArgb)
+        show(surface(overlapPaint(0, 0), overlapPaint(0, 3)))
+
+        assertStoppedPainted(string = 0, fret = 3, expected)
+        assertPainted("tuning-note-0", expected)
+    }
+
+    @Test
+    fun visualizerUnrelatedOpenStringHasNoChordPaint() {
+        show(surface(singlePaint(0, 3)))
+
+        val openString = compose.onNodeWithTag("tuning-note-0")
+        SurfacePalette.argb.forEach { argb ->
+            assertTrue(
+                "an unrelated open string must not have a chord-coloured note circle ${Color(argb)}",
+                openString.paintRingColorFraction(Color(argb)) < 0.15f,
+            )
+        }
+        assertTrue(
+            "an unrelated open string must not have an overlap-coloured note circle",
+            openString.paintRingColorFraction(Color(SurfacePalette.overlapArgb)) < 0.15f,
+        )
+        assertTrue(
+            "the stopped member verifies that chord paint is active in this visualizer fixture",
+            compose.onNodeWithContentDescription(positionDescription(0, 3))
+                .paintRingColorFraction(Color(SurfacePalette.colorForSlot(0uL))) > 0.45f,
+        )
     }
 
     @Test
@@ -276,7 +331,7 @@ class FretboardSurfaceUiTest {
     @Test
     fun selectedTuningControlHasAVisibleIndicatorAndUnselectedControlDoesNot() {
         show(
-            surface = surface(),
+            surface = surface(singlePaint(0, 0, slot = 1uL)),
             marked = mapOf(0 to 0),
             paintChords = false,
             onPositionTap = {},
@@ -292,6 +347,11 @@ class FretboardSurfaceUiTest {
         assertFalse(
             "unselected fret-zero control must not show the selection indicator",
             compose.onNodeWithTag("tuning-note-1").containsColor(BoardColors.selection),
+        )
+        assertFalse(
+            "analyzer mode must not replace cyan selection with the cell's chord colour",
+            compose.onNodeWithTag("tuning-note-0")
+                .containsColor(Color(SurfacePalette.colorForSlot(1uL))),
         )
     }
 
@@ -370,6 +430,24 @@ class FretboardSurfaceUiTest {
     private fun bounds(tag: String): Rect =
         compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
 
+    private fun assertPainted(tag: String, expected: Color) {
+        val note = compose.onNodeWithTag(tag)
+        assertTrue(
+            "$tag must visibly use $expected across its note circle",
+            note.paintRingColorFraction(expected) > 0.45f,
+        )
+        assertTrue("$tag must use the dark painted-note text", note.containsColor(BoardColors.ink))
+    }
+
+    private fun assertStoppedPainted(string: Int, fret: Int, expected: Color) {
+        val note = compose.onNodeWithContentDescription(positionDescription(string, fret))
+        assertTrue(
+            "stopped note must visibly use $expected across its note circle",
+            note.paintRingColorFraction(expected) > 0.45f,
+        )
+        assertTrue("stopped note must use the dark painted-note text", note.containsColor(BoardColors.ink))
+    }
+
     private fun positionDescription(string: Int, fret: Int, stringCount: Int = 2): String =
         "String ${stringCount - string}, fret $fret, S${string}F$fret"
 
@@ -378,15 +456,44 @@ class FretboardSurfaceUiTest {
         for (y in 0 until pixels.height) {
             for (x in 0 until pixels.width) {
                 val actual = pixels[x, y]
-                if (
-                    kotlin.math.abs(actual.red - expected.red) < 0.03f &&
-                    kotlin.math.abs(actual.green - expected.green) < 0.03f &&
-                    kotlin.math.abs(actual.blue - expected.blue) < 0.03f
-                ) {
+                if (actual.matches(expected)) {
                     return true
                 }
             }
         }
         return false
     }
+
+    /**
+     * Samples the body of the 30dp note circle rather than any one pixel. This
+     * stays independent of screen density and cannot mistake antialiased text
+     * for an overlap-grey fill.
+     */
+    private fun androidx.compose.ui.test.SemanticsNodeInteraction.paintRingColorFraction(
+        expected: Color,
+    ): Float {
+        val pixels = captureToImage().toPixelMap()
+        val centerX = (pixels.width - 1) / 2f
+        val centerY = (pixels.height - 1) / 2f
+        val scale = minOf(pixels.width, pixels.height).toFloat()
+        var matching = 0
+        var sampled = 0
+        for (y in 0 until pixels.height) {
+            for (x in 0 until pixels.width) {
+                val dx = (x - centerX) / scale
+                val dy = (y - centerY) / scale
+                val radiusSquared = dx * dx + dy * dy
+                if (radiusSquared in 0.14f * 0.14f..0.27f * 0.27f) {
+                    sampled += 1
+                    if (pixels[x, y].matches(expected)) matching += 1
+                }
+            }
+        }
+        return matching.toFloat() / sampled
+    }
+
+    private fun Color.matches(expected: Color): Boolean =
+        kotlin.math.abs(red - expected.red) < 0.03f &&
+            kotlin.math.abs(green - expected.green) < 0.03f &&
+            kotlin.math.abs(blue - expected.blue) < 0.03f
 }

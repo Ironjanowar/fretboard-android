@@ -21,8 +21,8 @@ android {
         applicationId = "dev.ironjanowar.fretboard"
         minSdk = 29
         targetSdk = 37
-        versionCode = 17
-        versionName = "0.8.4"
+        versionCode = 18
+        versionName = "0.8.5"
 
         // The application and the pinned engine expose the same two ABIs: one
         // for physical devices and one for the emulator verification path.

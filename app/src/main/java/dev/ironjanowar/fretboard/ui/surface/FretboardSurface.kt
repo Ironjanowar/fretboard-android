@@ -116,6 +116,7 @@ fun FretboardSurface(
                 rows = rows,
                 stringCount = stringCount,
                 marked = marked,
+                paintChords = paintChords,
                 onPositionTap = onPositionTap,
             )
             Box(
@@ -168,6 +169,7 @@ private fun TuningNotes(
     rows: List<SurfaceRowDto>,
     stringCount: Int,
     marked: Map<Int, Int>,
+    paintChords: Boolean,
     onPositionTap: ((PositionDto) -> Unit)?,
 ) {
     Column(Modifier.width(FretboardGeometry.OPEN_CELL_WIDTH_DP.dp)) {
@@ -178,6 +180,7 @@ private fun TuningNotes(
                 stringIndex = stringIndex,
                 stringCount = stringCount,
                 marked = marked[stringIndex] == 0,
+                paintChords = paintChords,
                 onPositionTap = onPositionTap,
             )
         }
@@ -191,8 +194,15 @@ private fun TuningNote(
     stringIndex: Int,
     stringCount: Int,
     marked: Boolean,
+    paintChords: Boolean,
     onPositionTap: ((PositionDto) -> Unit)?,
 ) {
+    val paint = if (cell == null || !paintChords) {
+        NotePaint.None
+    } else {
+        notePaint(cell.memberships, cell.fill)
+    }
+    val fillColor = paint.color()
     val note = cell?.note.orEmpty()
     val position = positionOf(stringIndex, 0)
     val label = positionLabel(stringIndex, stringCount, 0, note)
@@ -230,9 +240,16 @@ private fun TuningNote(
             },
         contentAlignment = Alignment.Center,
     ) {
+        if (fillColor != null) {
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .background(fillColor, CircleShape),
+            )
+        }
         Text(
             text = note,
-            color = if (marked) BoardColors.ink else MaterialTheme.colorScheme.onSurface,
+            color = if (marked || fillColor != null) BoardColors.ink else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
         )
@@ -360,11 +377,7 @@ private fun PositionCell(
     } else {
         notePaint(cell.memberships, cell.fill)
     }
-    val fillColor = when (paint) {
-        is NotePaint.Colored -> Color(paint.argb)
-        is NotePaint.Overlap -> Color(paint.argb)
-        NotePaint.None -> null
-    }
+    val fillColor = paint.color()
     val note = cell?.note.orEmpty()
     val label = positionLabel(stringIndex, stringCount, fret, note)
     val semantics = if (onPositionTap == null) {
@@ -427,6 +440,12 @@ private fun PositionCell(
             )
         }
     }
+}
+
+private fun NotePaint.color(): Color? = when (this) {
+    is NotePaint.Colored -> Color(argb)
+    is NotePaint.Overlap -> Color(argb)
+    NotePaint.None -> null
 }
 
 /** The engine's position type, built from the two indices the cell already holds. */
