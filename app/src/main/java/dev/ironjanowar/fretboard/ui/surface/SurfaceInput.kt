@@ -7,8 +7,8 @@ import dev.ironjanowar.fretboard.core.PositionDto
  * Where a tap on the fretted surface lands.
  *
  * The surface is drawn as a `FretboardGeometry` grid — the fret-number header,
- * the inlay strip, then one row per physical string, reversed so the
- * instrument's first string is at the bottom — and this is the same grid read
+ * then one row per physical string, reversed so the instrument's first string
+ * is at the bottom — and this is the same grid read
  * backwards: one function decides which cell a point owns, and drawing, pointer
  * input and the accessibility bounds all use it. Nothing here is musical: a cell
  * is a (string, fret) pair, and the note it carries is the engine's.
@@ -20,7 +20,7 @@ import dev.ironjanowar.fretboard.core.PositionDto
 object SurfaceInput {
 
     /** Distance from the top of the surface to the first string row. */
-    val ROWS_TOP_DP: Float = FretboardGeometry.HEADER_HEIGHT_DP + FretboardGeometry.MARKER_HEIGHT_DP
+    val ROWS_TOP_DP: Float = FretboardGeometry.HEADER_HEIGHT_DP
 
     /** The minimum touch target A10 pins; every cell is at least this wide and tall. */
     const val MIN_TARGET_DP: Float = 48f

@@ -36,6 +36,15 @@ class SurfaceInputTest {
             FretboardGeometry.ROW_HEIGHT_DP / 2f
 
     @Test
+    fun `string rows begin immediately below the fret-number header`() {
+        assertEquals(
+            "inlay dots live inside the board and add no separate input offset",
+            FretboardGeometry.HEADER_HEIGHT_DP,
+            SurfaceInput.ROWS_TOP_DP,
+        )
+    }
+
+    @Test
     fun `every cell is at least a 48dp target`() {
         assertTrue(SurfaceInput.MIN_TARGET_DP >= 48f)
         assertTrue(FretboardGeometry.CELL_WIDTH_DP >= SurfaceInput.MIN_TARGET_DP)
@@ -147,13 +156,13 @@ class SurfaceInputTest {
     }
 
     @Test
-    fun `the header and the marker strip own no cell`() {
+    fun `the fret-number header owns no cell`() {
         val fret = columnCentre(3)
         assertNull(SurfaceInput.tapEvent(fret, 0f, lastFret, stringCount))
         assertNull(
             SurfaceInput.tapEvent(
                 fret,
-                FretboardGeometry.HEADER_HEIGHT_DP + FretboardGeometry.MARKER_HEIGHT_DP - 0.01f,
+                FretboardGeometry.HEADER_HEIGHT_DP - 0.01f,
                 lastFret,
                 stringCount,
             ),
