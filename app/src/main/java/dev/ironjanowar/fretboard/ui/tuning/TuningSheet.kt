@@ -1,10 +1,11 @@
 package dev.ironjanowar.fretboard.ui.tuning
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -12,13 +13,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,29 +39,14 @@ import androidx.compose.ui.window.Dialog
 import dev.ironjanowar.fretboard.session.TuningDraft
 import dev.ironjanowar.fretboard.session.TuningRow
 import dev.ironjanowar.fretboard.session.tuningRows
-import dev.ironjanowar.fretboard.ui.common.PillChip
 import dev.ironjanowar.fretboard.ui.visualizer.ROOT_WIRE_NAMES
 
 /**
- * The tuning draft sheet.
+ * Modal editor for a tuning draft.
  *
- * It edits a draft and nothing else: the committed page changes only when Apply
- * commits the draft through the engine's own event, and Cancel or a dismissal
- * drops the draft entirely, so reopening always starts from the committed
- * tuning.
- *
- * The strings are edited in the baseline's own order — physical order, labelled
- * `String N` down to `String 1` — and each row's note list is the twelve sharp
- * wire names the engine accepts, a wire token list rather than musical logic.
- * The pitch each choice resolves to is the engine's: it resolves the note
- * against the draft's fixed reference preset, never against the string's current
- * pitch.
- *
- * The preset the sheet shows is the engine's own detection for the draft's exact
- * pitches (its `Custom` included), and the picker above it is the engine's own
- * ordered catalog of preset names (`presets(instrument)`) — never a list the
- * client wrote. An instrument the engine names no presets for (the keyboard)
- * says so plainly, and a refused list is shown as a refusal.
+ * The engine owns the preset names, their order, and every draft update. This
+ * composable only renders that session state and forwards selections. Dismissal
+ * and Cancel both drop the draft; Apply is the only commit path.
  */
 @Composable
 fun TuningSheet(
@@ -67,116 +65,136 @@ fun TuningSheet(
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 560.dp)
                 .testTag("tuning-sheet"),
         ) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 560.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+            Column {
                 Text(
                     text = "Tuning",
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 18.dp, top = 18.dp, end = 18.dp),
                 )
 
-                Text(
-                    text = "Preset: ${draft.preset} — reference ${draft.tuning.reference}",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.testTag("tuning-preset"),
-                )
-
-                PresetPicker(
-                    state = presets,
-                    selected = draft.preset,
+                TuningBody(
+                    draft = draft,
+                    rows = tuningRows(stringCount),
+                    presets = presets,
                     enabled = enabled,
-                    onSelect = onSelectPreset,
+                    onSelectPreset = onSelectPreset,
+                    onChangeString = onChangeString,
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp, vertical = 4.dp)
+                        .testTag("tuning-body"),
                 )
 
-                tuningRows(stringCount).forEach { row ->
-                    StringNoteRow(
+                TuningActions(
+                    enabled = enabled,
+                    onCancel = onCancel,
+                    onApply = onApply,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TuningBody(
+    draft: TuningDraft,
+    rows: List<TuningRow>,
+    presets: PresetPickerState,
+    enabled: Boolean,
+    onSelectPreset: (String) -> Unit,
+    onChangeString: (Int, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = "Preset: ${draft.preset} — reference ${draft.tuning.reference}",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.testTag("tuning-preset"),
+        )
+        PresetPicker(
+            state = presets,
+            selected = draft.preset,
+            enabled = enabled,
+            onSelect = onSelectPreset,
+        )
+        StringEditors(
+            rows = rows,
+            notes = draft.notes,
+            enabled = enabled,
+            onChange = onChangeString,
+        )
+    }
+}
+
+@Composable
+private fun StringEditors(
+    rows: List<TuningRow>,
+    notes: List<String>,
+    enabled: Boolean,
+    onChange: (Int, String) -> Unit,
+) {
+    val columns = if (
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    ) {
+        2
+    } else {
+        1
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        rows.chunked(columns).forEach { rowGroup ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                rowGroup.forEach { row ->
+                    StringNoteDropdown(
                         row = row,
-                        note = draft.notes.getOrNull(row.stringIndex) ?: "",
+                        note = notes.getOrNull(row.stringIndex).orEmpty(),
                         enabled = enabled,
-                        onChange = { note -> onChangeString(row.stringIndex, note) },
+                        onChange = { note -> onChange(row.stringIndex, note) },
+                        modifier = Modifier.weight(1f),
                     )
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-                ) {
-                    TextButton(
-                        onClick = onCancel,
-                        enabled = enabled,
-                        modifier = Modifier.testTag("tuning-cancel"),
-                    ) {
-                        Text("Cancel")
-                    }
-                    Button(
-                        onClick = onApply,
-                        enabled = enabled,
-                        modifier = Modifier.testTag("tuning-apply"),
-                    ) {
-                        Text("Apply")
-                    }
+                repeat(columns - rowGroup.size) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
     }
 }
 
-/**
- * One string row: its label, the note the engine currently names, and the twelve
- * wire note names to choose from.
- *
- * The chips are the control the chord editor already ships, in their own
- * horizontal scroll, so a row of twelve never squeezes the sheet or pushes Apply
- * out of reach on a phone.
- */
 @Composable
-private fun StringNoteRow(
+private fun StringNoteDropdown(
     row: TuningRow,
     note: String,
     enabled: Boolean,
     onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            text = if (note.isEmpty()) {
-                "${row.label} — the engine named no note"
-            } else {
-                "${row.label} — $note"
-            },
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
+    Column(modifier) {
+        TuningDropdown(
+            selected = note,
+            options = ROOT_WIRE_NAMES,
+            label = row.label,
+            enabled = enabled,
+            tag = "tuning-string-${row.stringIndex}-dropdown",
+            optionTag = { name -> "tuning-string-${row.stringIndex}-option-$name" },
+            onSelect = onChange,
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(vertical = 2.dp)
-                .testTag("tuning-string-${row.stringIndex}"),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            ROOT_WIRE_NAMES.forEach { name ->
-                PillChip(
-                    text = name,
-                    selected = name == note,
-                    enabled = enabled,
-                    onClick = { onChange(name) },
-                    modifier = Modifier.testTag("tuning-string-${row.stringIndex}-$name"),
-                )
-            }
-        }
         if (note.isEmpty()) {
             Text(
-                text = "the engine named no note for this string",
+                text = "The engine named no note for this string",
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier
@@ -190,15 +208,6 @@ private fun StringNoteRow(
     }
 }
 
-/**
- * The preset picker: the engine's own ordered names, or its own "none", or its
- * own refusal.
- *
- * It renders the names exactly as the engine sent them — same order, nothing
- * filtered — and the chip whose name equals the engine's detected label of the
- * draft is the selected one. Picking a name sends it back to the engine, which
- * answers the whole draft; the sheet never assumes the selection took.
- */
 @Composable
 private fun PresetPicker(
     state: PresetPickerState,
@@ -209,24 +218,15 @@ private fun PresetPicker(
     when (state) {
         is PresetPickerState.Ready -> {
             ControlCaptionFor(presets = state.names)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(vertical = 2.dp)
-                    .testTag("tuning-preset-picker"),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                state.names.forEach { name ->
-                    PillChip(
-                        text = name,
-                        selected = name == selected,
-                        enabled = enabled,
-                        onClick = { onSelect(name) },
-                        modifier = Modifier.testTag("tuning-preset-option-$name"),
-                    )
-                }
-            }
+            TuningDropdown(
+                selected = selected,
+                options = state.names,
+                label = "Preset",
+                enabled = enabled,
+                tag = "tuning-preset-dropdown",
+                optionTag = { name -> "tuning-preset-option-$name" },
+                onSelect = onSelect,
+            )
         }
 
         PresetPickerState.NotApplicable -> Text(
@@ -242,6 +242,94 @@ private fun PresetPicker(
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.testTag("tuning-preset-refused"),
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TuningDropdown(
+    selected: String,
+    options: List<String>,
+    label: String,
+    enabled: Boolean,
+    tag: String,
+    optionTag: (String) -> String,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val menuExpanded = expanded && enabled
+
+    LaunchedEffect(enabled) {
+        if (!enabled) expanded = false
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = menuExpanded,
+        onExpandedChange = { open -> if (enabled) expanded = open },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            enabled = enabled,
+            singleLine = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuExpanded) },
+            modifier = Modifier
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled)
+                .fillMaxWidth()
+                .testTag(tag),
+        )
+        ExposedDropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 240.dp),
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        if (enabled) {
+                            onSelect(option)
+                            expanded = false
+                        }
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.testTag(optionTag(option)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TuningActions(
+    enabled: Boolean,
+    onCancel: () -> Unit,
+    onApply: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 18.dp, end = 18.dp, bottom = 12.dp)
+            .testTag("tuning-actions"),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+    ) {
+        TextButton(
+            onClick = onCancel,
+            enabled = enabled,
+            modifier = Modifier.testTag("tuning-cancel"),
+        ) {
+            Text("Cancel")
+        }
+        Button(
+            onClick = onApply,
+            enabled = enabled,
+            modifier = Modifier.testTag("tuning-apply"),
+        ) {
+            Text("Apply")
+        }
     }
 }
 

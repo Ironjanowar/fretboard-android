@@ -88,20 +88,21 @@ class RotationStateTest {
         val captionBefore = captionText()
         compose.onNodeWithTag("open-tuning").performClick()
         awaitTag("tuning-sheet")
-        val committedRows = draftRowLabels()
+        val committedRows = draftDropdownValues()
         assertTrue("the sheet drew its string rows: $committedRows", committedRows.isNotEmpty())
-        val committedNote = committedRows.last().substringAfter(" — ")
-        val wireName = listOf("C", "C#", "D", "D#", "E").first { name -> name != committedNote }
-        compose.onNodeWithTag("tuning-string-0-$wireName").performClick()
-        compose.waitUntil(TIMEOUT_MS) { draftRowLabels() != committedRows }
-        val editedRows = draftRowLabels()
+        val committedNote = committedRows.first()
+        val wireName = listOf("C", "C#", "D", "D#", "E").first { name -> name !in committedNote }
+        compose.onNodeWithTag("tuning-string-0-dropdown").performClick()
+        compose.onNodeWithTag("tuning-string-0-option-$wireName").performClick()
+        compose.waitUntil(TIMEOUT_MS) { draftDropdownValues() != committedRows }
+        val editedRows = draftDropdownValues()
         assertNotEquals("the draft carries the engine's answer", committedRows, editedRows)
 
         rotate()
 
         // The sheet is still open, still holding the unapplied edit.
         compose.onNodeWithTag("tuning-sheet").assertExists()
-        assertEquals("the unapplied edit survives the rotation", editedRows, draftRowLabels())
+        assertEquals("the unapplied edit survives the rotation", editedRows, draftDropdownValues())
         // The committed page is the engine's and the draft never touched it.
         assertEquals("the committed tuning is untouched", captionBefore, captionText())
         // The tab, the chord and the mark are all still there.
@@ -168,12 +169,14 @@ class RotationStateTest {
             .mapNotNull { node -> node.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() }
             .sorted()
 
-    /** The string editor's rows, in the sheet's own order: `String N — note`. */
-    private fun draftRowLabels(): List<String> =
-        nodes(hasText("String ", substring = true))
-            .mapNotNull { node -> textOfNode(node) }
-            .filter { text -> text.startsWith("String ") }
-            .sorted()
+    /** The selected values of the six string dropdowns, in physical order. */
+    private fun draftDropdownValues(): List<String> =
+        (0 until 6).map { index ->
+            val tag = "tuning-string-$index-dropdown"
+            val node = nodes(hasTestTag(tag)).single()
+            node.config.getOrNull(SemanticsProperties.EditableText)?.text
+                ?: error("the string dropdown carries no selected value: $tag")
+        }
 
     /** The tag of the keyboard's first key, which is the engine's own first key. */
     private fun firstKeyTag(): String =
