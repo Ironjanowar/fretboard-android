@@ -25,6 +25,7 @@ import dev.ironjanowar.fretboard.ui.tuning.PresetPickerState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import dev.ironjanowar.fretboard.links.DeliveredText
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -525,6 +526,34 @@ class SessionStateHolderTest {
             holder.state.error,
         )
         assertEquals("the action is not busy any more", false, holder.state.busy)
+    }
+
+    @Test
+    fun `a refused delivery is a notice, keeps the session, and leaves nothing loading`() {
+        // Reported from a device: a refused paste showed its message, the session stayed on
+        // screen — and every control stayed disabled with the progress indicator still spinning,
+        // because the arbitration's answer never cleared the busy flag. An answered refusal is
+        // not something the application is still waiting for.
+        val page = viewOf(frettedPage())
+        val engine = ScriptedEngine().apply { startAnswer = SessionLoad.Ready(page) }
+        val holder = holder(engine)
+        holder.start()
+
+        holder.deliver(DeliveredText.Refused("The shared content is image/png, not plain text."))
+
+        assertSame("the session the refusal did not damage stays", page, holder.state.view)
+        assertEquals(
+            "The shared content is image/png, not plain text.",
+            holder.state.notice,
+        )
+        assertNull("a refused input is not a failure of the session", holder.state.error)
+        assertEquals("the refusal was answered, so nothing is loading", false, holder.state.busy)
+
+        holder.dismissNotice()
+
+        assertNull("dismissing clears the message", holder.state.notice)
+        assertSame("and changes nothing else", page, holder.state.view)
+        assertEquals(false, holder.state.busy)
     }
 
     @Test

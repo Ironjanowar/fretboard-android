@@ -212,7 +212,13 @@ class SessionStateHolder(
         scope.launch {
             when (val decision = boot.open(holding)) {
                 is BootDecision.Open -> publish(opened(decision))
-                is BootDecision.KeepCurrent -> publish(state.copy(notice = decision.notice))
+                // The session is kept *and the busy flag goes with it*: a delivery the
+                // arbitration refuses is answered, so the application is not still waiting for
+                // anything. Leaving it set disables every control and spins the progress
+                // indicator for good — reported from a device, where a refused paste left the
+                // session on screen and unusable.
+                is BootDecision.KeepCurrent ->
+                    publish(state.copy(notice = decision.notice, busy = false))
                 // A newer decision is already on its way: this answer is not one.
                 BootDecision.Superseded -> Unit
             }
