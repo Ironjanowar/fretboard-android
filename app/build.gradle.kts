@@ -21,8 +21,8 @@ android {
         applicationId = "dev.ironjanowar.fretboard"
         minSdk = 29
         targetSdk = 37
-        versionCode = 12
-        versionName = "0.7.2"
+        versionCode = 13
+        versionName = "0.8.0"
 
         // The engine artifact ships one ABI (arm64-v8a, DEC-10), so the
         // application declares only that: an APK carrying native libraries it

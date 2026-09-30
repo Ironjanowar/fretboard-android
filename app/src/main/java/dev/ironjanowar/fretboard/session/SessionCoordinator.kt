@@ -17,6 +17,7 @@ import dev.ironjanowar.fretboard.core.applyPageEvent
 import dev.ironjanowar.fretboard.core.chordColorSlots
 import dev.ironjanowar.fretboard.core.chordDetails
 import dev.ironjanowar.fretboard.core.defaultState
+import dev.ironjanowar.fretboard.core.encodePageQuery
 import dev.ironjanowar.fretboard.core.frettedSurface
 import dev.ironjanowar.fretboard.core.importLegacyUrl
 import dev.ironjanowar.fretboard.core.instruments
@@ -176,6 +177,17 @@ suspend fun restoreSession(state: PageStateDto): SessionLoad = withContext(Dispa
         SessionLoad.Failed(engineFailure(error))
     }
 }
+
+/**
+ * The query one page's link carries, written by the engine (task `A20`).
+ *
+ * The emitting direction of the same codec: the page becomes the parameters that reproduce it
+ * and those become the spelling the frozen transport accepts. It carries **no base and no
+ * leading `?`** — joining it to the approved origin is the application's business — and, as
+ * with reading, no parameter is decoded and no URL is assembled in this file.
+ */
+suspend fun pageQuery(page: PageStateDto): String =
+    withContext(Dispatchers.Default) { encodePageQuery(page) }
 
 /**
  * Read one delivered legacy link, in the engine's own terms (task `A19`).

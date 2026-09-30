@@ -1,17 +1,22 @@
 # Sharing a session (A20/A21)
 
-## The decision today: sharing is off
+## The approved origin
 
-A link this application emits is only meaningful against the origin its web app actually
-runs on. **No origin has been approved** (`DEC-07` in `docs/open-questions.md`), and the
-plan's own instruction is explicit:
+**`https://cuwano.gramos.me/`** — confirmed by the user and verified from this machine before
+it was written down:
 
-> If host unresolved, do not invent it, disable sharing with explicit explanation in interim
-> APK and keep A20/P6 gate incomplete; paste and SEND import continue working.
+| Check | Result |
+|---|---|
+| `GET /` | `200`, 17,599 bytes |
+| `GET /?chords=Cmaj` | `200`, 28,208 bytes — the query is read, not ignored |
+| `GET /?chords=Cmaj&chords=Amin` | `200` |
+| `GET /?chords=C%23maj` | `200` — the percent-encoded sharp, the one spelling a raw `#` would break |
 
-So `ShareConfig.approvedBase` is `null` and `ShareLauncher` refuses with one sentence
-instead of guessing a host. The tests in `app/src/test/.../ShareLauncherTest.kt` pin that,
-including that a non-HTTPS base is refused like no base at all.
+While the origin was unresolved (`DEC-07`) this was `null` and sharing was off with a sentence
+instead of a guessed host, which is what the plan asked for in the meantime. Now the value is
+in `ShareConfig`, the note that explained its absence disappears with it (the note was driven
+by `unavailableReason`, so there is nothing to remove by hand), and a non-HTTPS base is still
+refused like no base at all — the tests in `app/src/test/.../ShareLauncherTest.kt` pin both.
 
 ## What works today, and where it comes from
 

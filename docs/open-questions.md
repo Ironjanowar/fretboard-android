@@ -5,6 +5,21 @@ open, **why it cannot be decided here**, and **what it blocks**. Nothing in this
 is a guess that has been implemented; where a task could proceed without the answer,
 it did, and says so.
 
+## Resolved: DEC-07 — the canonical web origin is `https://cuwano.gramos.me/`
+
+The origin was the one thing A20 could not guess: a link this application emits is only
+meaningful against the origin its web app actually serves. The user confirmed it, and it was
+verified from this machine before being written down — `200` on the page route, `200` on the
+legacy query the emitting codec produces, and `200` on a percent-encoded sharp
+(`?chords=C%23maj`), which is the spelling a raw `#` would break.
+
+With it, `ShareConfig.approvedBase` carries the origin, sharing is on, the note that explained
+its absence is gone (it was driven by `unavailableReason`) and A20's remaining halves — the
+chooser, the copy-link path and the P6 gate — are unblocked. What is *not* settled by this is
+`A21`: the App Link association still needs a published `assetlinks.json` for this application
+id, and a device to check `adb shell pm get-app-links`; until then no `ACTION_VIEW` filter is
+declared, so the application is not a web-link handler.
+
 ## Decided: there is no CI workflow, by the user's own decision
 
 `A22` in the plan lists `.github/workflows/android.yml` among its files and describes what

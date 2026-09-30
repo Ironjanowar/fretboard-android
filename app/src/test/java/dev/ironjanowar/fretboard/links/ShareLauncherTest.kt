@@ -25,21 +25,29 @@ class ShareLauncherTest {
     }
 
     @Test
-    fun `no host is invented while none is approved`() {
-        // Everything below would become a link if a host were guessed; none of it may.
+    fun `no host is invented when there is none`() {
+        // The rule that outlives the approved origin: with no base, no query becomes a link.
         for (query in listOf("", "chords=Cmaj", "chords=Cmaj&marked=5-2")) {
-            val outcome = ShareLauncher().linkFor(query)
+            val outcome = ShareLauncher(base = null).linkFor(query)
 
             assertTrue("$query produced a link", outcome is ShareOutcome.Unavailable)
         }
     }
 
     @Test
-    fun `the shipped configuration is the unresolved one`() {
-        // The production default, not a parameter: this is the value the APK carries.
-        assertEquals(null, ShareConfig.approvedBase)
-        assertTrue(ShareConfig.unavailableReason != null)
-        assertTrue(ShareLauncher().linkFor("chords=Cmaj") is ShareOutcome.Unavailable)
+    fun `the shipped configuration is the approved origin`() {
+        // The production default, not a parameter: this is the value the APK carries, and it
+        // is the origin the web application actually serves.
+        assertEquals("https://cuwano.gramos.me/", ShareConfig.approvedBase)
+        assertEquals("sharing is on, so nothing explains why it would be off", null, ShareConfig.unavailableReason)
+    }
+
+    @Test
+    fun `the link the application would send names the approved origin and the page route`() {
+        assertEquals(
+            ShareOutcome.Link("https://cuwano.gramos.me/?chords=Cmaj"),
+            ShareLauncher().linkFor("chords=Cmaj"),
+        )
     }
 
     @Test
