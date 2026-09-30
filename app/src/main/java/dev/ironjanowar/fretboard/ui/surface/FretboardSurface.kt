@@ -223,9 +223,8 @@ private fun TuningNote(
                 if (marked) {
                     drawCircle(
                         color = BoardColors.selection,
-                        radius = size.minDimension / 2f - 2.dp.toPx(),
+                        radius = 17.dp.toPx(),
                         center = Offset(size.width / 2f, size.height / 2f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
                     )
                 }
             },
@@ -233,7 +232,7 @@ private fun TuningNote(
     ) {
         Text(
             text = note,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (marked) BoardColors.ink else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
         )
@@ -403,12 +402,10 @@ private fun PositionCell(
                     )
                 }
                 if (marked) {
-                    val radius = size.minDimension / 2f - 2.dp.toPx()
                     drawCircle(
                         color = BoardColors.selection,
-                        radius = radius,
+                        radius = 17.dp.toPx(),
                         center = Offset(size.width / 2f, size.height / 2f),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
                     )
                 }
             },
@@ -424,7 +421,7 @@ private fun PositionCell(
         if ((paintChords && fillColor != null) || (!paintChords && marked)) {
             Text(
                 text = note,
-                color = if (fillColor != null) BoardColors.ink else BoardColors.selection,
+                color = BoardColors.ink,
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
             )
