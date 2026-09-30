@@ -6,11 +6,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import dev.ironjanowar.fretboard.core.ChordModeDto
 import dev.ironjanowar.fretboard.core.InstrumentDefinitionDto
 import dev.ironjanowar.fretboard.core.KeySuggestionDto
 import dev.ironjanowar.fretboard.core.PageEventDto
+import dev.ironjanowar.fretboard.links.ShareLauncher
+import dev.ironjanowar.fretboard.links.ShareOutcome
 import dev.ironjanowar.fretboard.links.DeliveredText
+import dev.ironjanowar.fretboard.session.pageQuery
 import dev.ironjanowar.fretboard.session.BindingKeySuggestionEngine
 import dev.ironjanowar.fretboard.session.EvaluationCoordinator
 import dev.ironjanowar.fretboard.session.EvaluationUiState
@@ -109,6 +113,21 @@ class FretboardViewModel(application: Application) : AndroidViewModel(applicatio
      * is a session in it, and what it means, is the parser's and the engine's business.
      */
     fun deliver(delivered: DeliveredText) = holder.deliver(delivered)
+
+    /**
+     * The link for the session on screen, handed to [onLink] when there is one (task `A20`).
+     *
+     * The engine writes the query and the approved origin is joined to it by `ShareLauncher`;
+     * while sharing is off — which it is not, now that the origin is approved — the caller is
+     * simply not called, and the reason is on screen instead.
+     */
+    fun shareLink(onLink: (String) -> Unit) {
+        val page = state.view?.state ?: return
+        viewModelScope.launch {
+            val outcome = ShareLauncher().linkFor(pageQuery(page))
+            (outcome as? ShareOutcome.Link)?.let { link -> onLink(link.url) }
+        }
+    }
 
     fun applyEvent(event: PageEventDto) = holder.applyEvent(event)
 

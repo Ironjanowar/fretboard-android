@@ -1,5 +1,6 @@
 package dev.ironjanowar.fretboard.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -118,6 +120,7 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
     // A19: the explicit paste reads the clipboard *on the tap below* and nowhere else —
     // the application never scrapes it, and nothing is read at startup.
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
 
     // Idempotent on purpose: this runs again after every rotation, and a session
     // that is already held must come back rather than be asked for again.
@@ -200,6 +203,26 @@ private fun FretboardScreen(fretboard: FretboardViewModel) {
                 modifier = Modifier.testTag("paste-link"),
             ) {
                 Text("Pegar enlace")
+            }
+
+            // A20: the link this session is, sent through the system chooser. The engine writes
+            // the query and `ShareLauncher` joins it to the approved origin; when sharing is off
+            // the control is disabled and the note below says why, so there is never a control
+            // that quietly does nothing.
+            TextButton(
+                onClick = {
+                    fretboard.shareLink { url ->
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, url)
+                        }
+                        context.startActivity(Intent.createChooser(send, "Compartir enlace"))
+                    }
+                },
+                enabled = !session.busy && ShareConfig.approvedBase != null,
+                modifier = Modifier.testTag("share-link"),
+            ) {
+                Text("Compartir")
             }
         }
 
